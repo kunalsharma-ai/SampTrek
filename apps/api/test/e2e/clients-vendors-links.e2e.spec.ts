@@ -22,6 +22,9 @@ describe('Clients and vendors: status, logos, numbering, UID prefix and client u
   let clientId: string;
   let vendorId: string;
   const http = () => request(app.getHttpServer());
+  // A different IP for each respondent: one IP may only have one open session per project.
+  let ipN = 0;
+  const freshIp = () => { ipN += 1; return `10.${Math.floor(ipN / 250) % 250}.${(ipN % 250) + 1}.9`; };
   const upload = (path: string, file: Buffer, name: string, token = pmToken) => http().post(`/api/v1${path}`).set('Authorization', `Bearer ${token}`).attach('file', file, name);
 
   beforeAll(async () => {
@@ -161,7 +164,7 @@ describe('Clients and vendors: status, logos, numbering, UID prefix and client u
     let countryId: string;
     let entryCode: string;
     let testEntryCode: string;
-    const enter = (code: string, uid: string) => http().get(`/s/${code}?vid=${uid}`).set('User-Agent', UA).set('X-Forwarded-For', '198.51.100.7').expect(302);
+    const enter = (code: string, uid: string) => http().get(`/s/${code}?vid=${uid}`).set('User-Agent', UA).set('X-Forwarded-For', freshIp()).expect(302);
 
     beforeAll(async () => {
       await admin.put('/numbering', { workOrderPrefix: 'FR', nextWorkOrderNumber: 9200, uidPrefix: 'SMP-' }).expect(200);

@@ -196,6 +196,8 @@ export class SurveyService {
     });
     if (!allocation) return { location: internalEndPage(appConfig.publicBaseUrl, 'SECURITY_REJECT') };
 
+    // Only the test code makes a test session. "test=1" on test links is a label people can see;
+    // added to a live link it changes nothing, so it cannot be used to skip live security checks.
     const isTest = allocation.testEntryCode === req.code;
     let uid = (req.query[allocation.uidParam] ?? '').trim();
     // A test link opened as copied (still "[UID]", or no ID at all) gets its own test ID, so the
@@ -326,6 +328,15 @@ export class SurveyService {
         select: { id: true, vendorAllocation: { select: { vendorId: true } } },
       });
       checks.push(sameDevice ? duplicateOf('duplicate', 'SAME_DEVICE', sameDevice.vendorAllocation.vendorId !== allocation.vendorId) : { check: 'duplicate', ok: true });
+    }
+    // Always on, even with duplicate detection off: one IP may have only one open (unfinished) live
+    // session per project, so the survey cannot be run in several tabs or windows at once.
+    if (ipHash) {
+      const open = await this.prisma.respondentSession.findFirst({
+        where: { projectId: project.id, isTest: false, ipHash, status: 'STARTED', expiresAt: { gt: new Date() } },
+        select: { id: true, vendorAllocation: { select: { vendorId: true } } },
+      });
+      checks.push(open ? duplicateOf('sameIpOpen', 'SAME_IP_OPEN', open.vendorAllocation.vendorId !== allocation.vendorId) : { check: 'sameIpOpen', ok: true });
     }
     // Fraud risk from the entry checks; with no gate page, the threshold is applied here.
     const rules = fraudOn ? fraudRulesOf(project.fraudRules) : { ...fraudRulesOf(null), riskThreshold: null };

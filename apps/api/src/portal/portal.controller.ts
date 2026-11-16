@@ -160,7 +160,7 @@ export class VendorPortalController {
         completes: a.completes,
         uidParam: a.uidParam,
         entryLink: `${base}/s/${a.entryCode}?${entryQuery(a.uidParam, a.vendor)}`,
-        testEntryLink: `${base}/s/${a.testEntryCode}?${entryQuery(a.uidParam, a.vendor)}`,
+        testEntryLink: `${base}/s/${a.testEntryCode}?${entryQuery(a.uidParam, a.vendor)}&test=1`,
         uniqueLinksOnly: a.uniqueLinksOnly,
         uniqueLinks: {
           total: linkTotals.find((l) => l.vendorAllocationId === a.id)?._count._all ?? 0,

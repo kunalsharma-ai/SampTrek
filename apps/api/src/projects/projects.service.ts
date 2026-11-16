@@ -419,7 +419,8 @@ export class ProjectsService {
           vendor: withLogoUrl('vendor', a.vendor),
           // With URL protection on, vendors append sig = hex HMAC-SHA256(their signing secret, UID).
           entryLink: `${base}/s/${a.entryCode}?${entryQuery(a.uidParam, a.vendor)}${signedFor(a) ? '&sig=[SIG]' : ''}`,
-          testEntryLink: `${base}/s/${a.testEntryCode}?${entryQuery(a.uidParam, a.vendor)}${signedFor(a) ? '&sig=[SIG]' : ''}`,
+          // test=1 marks the link as a test link on sight; the test code is what makes it one.
+          testEntryLink: `${base}/s/${a.testEntryCode}?${entryQuery(a.uidParam, a.vendor)}&test=1${signedFor(a) ? '&sig=[SIG]' : ''}`,
           stats: allocStats.get(a.id) ?? emptyStats(),
         })),
       })),

@@ -145,9 +145,13 @@ describe('Feedback 2026-11-16: security per vendor and per system (e2e)', () => 
   it('lets a vendor skip duplicate detection, and lets the project set it back for that vendor', async () => {
     const { p, code } = await liveProject();
     const enter = (v: string, uid: string) => http().get(`/s/${code(v)}?vid=${uid}`).set('User-Agent', MAC).set('X-Forwarded-For', '203.0.113.9').expect(302);
+    // Finished sessions (an open one from the same IP is always blocked, see below).
+    const finish = (uid: string) => prisma.respondentSession.updateMany({ where: { vendorRespondentId: uid }, data: { status: 'TERMINATE' } });
     await enter(loose, 'L1');
+    await finish('L1');
     await enter(loose, 'L2');
     expect(await status('L2')).toBe('STARTED');
+    await finish('L2');
     await enter(strict, 'S1');
     expect(await status('S1')).toBe('DUPLICATE');
 
@@ -155,6 +159,37 @@ describe('Feedback 2026-11-16: security per vendor and per system (e2e)', () => 
     await enter(loose, 'L3');
     expect(await status('L3')).toBe('DUPLICATE');
     await pm.put(`/projects/${p.id}/vendors/${loose}/security`, { overrides: { nonsense: true } }).expect(400);
+  });
+
+  it('always blocks a second open session from the same IP on live links, even with duplicate detection off', async () => {
+    const { p } = await liveProject();
+    const a = p.countries[0].allocations.find((x: { vendorId: string }) => x.vendorId === loose);
+    const enter = (code: string, uid: string, ip: string, extra = '') => http().get(`/s/${code}?vid=${uid}${extra}`).set('User-Agent', MAC).set('X-Forwarded-For', ip).expect(302);
+    await enter(a.entryCode, 'TAB1', '203.0.113.20');
+    expect(await status('TAB1')).toBe('STARTED');
+    // Second tab, same IP, duplicate detection off for this vendor: blocked while the first is open.
+    await enter(a.entryCode, 'TAB2', '203.0.113.20');
+    const tab2 = await prisma.respondentSession.findFirst({ where: { vendorRespondentId: 'TAB2' } });
+    expect(tab2).toMatchObject({ status: 'DUPLICATE', statusDetail: 'SAME_IP_OPEN' });
+    // Another IP is fine.
+    await enter(a.entryCode, 'OTHER1', '203.0.113.21');
+    expect(await status('OTHER1')).toBe('STARTED');
+    // Test links are never blocked, and test=1 on a live link does not make it a test.
+    await enter(a.testEntryCode, 'QA1', '203.0.113.20', '&test=1');
+    expect(await prisma.respondentSession.findFirst({ where: { vendorRespondentId: 'QA1' } })).toMatchObject({ isTest: true, status: 'STARTED' });
+    await enter(a.entryCode, 'TAB3', '203.0.113.20', '&test=1');
+    expect(await prisma.respondentSession.findFirst({ where: { vendorRespondentId: 'TAB3' } })).toMatchObject({ isTest: false, status: 'DUPLICATE' });
+    // Once the first session ends, the same IP may come in again (duplicate detection is off for this vendor).
+    await prisma.respondentSession.updateMany({ where: { vendorRespondentId: 'TAB1' }, data: { status: 'COMPLETE' } });
+    await enter(a.entryCode, 'TAB4', '203.0.113.20');
+    expect(await status('TAB4')).toBe('STARTED');
+  });
+
+  it('marks test links with test=1 so they look different from live links', async () => {
+    const { p } = await liveProject();
+    const links = (await pm.get(`/projects/${p.id}`).expect(200)).body.countries[0].allocations[0];
+    expect(links.testEntryLink).toContain('&test=1');
+    expect(links.entryLink).not.toContain('test=1');
   });
 
   it('blocks a desktop system that is unticked, unless device limits are off for the vendor', async () => {
@@ -251,7 +286,10 @@ describe('Feedback 2026-11-16: vendor setup and report (e2e)', () => {
     const page2 = (await pm.get(`/projects/${p.id}/vendors/${fcId}/report?take=10&skip=10`).expect(200)).body;
     expect(page2.rows).toHaveLength(2);
     const found = (await pm.get(`/projects/${p.id}/vendors/${fcId}/report?q=R1`).expect(200)).body;
-    expect(found.rows.map((r: { respondentId: string }) => r.respondentId).sort()).toEqual(['R1', 'R10', 'R11', 'R12']);
+    // Search also matches the UID (a random token), so another row can match through its UID.
+    const byId = found.rows.filter((r: { respondentId: string }) => r.respondentId.startsWith('R1'));
+    expect(byId.map((r: { respondentId: string }) => r.respondentId).sort()).toEqual(['R1', 'R10', 'R11', 'R12']);
+    for (const r of found.rows as { respondentId: string; uid: string }[]) expect(r.respondentId.startsWith('R1') || r.uid.toLowerCase().includes('r1')).toBe(true);
     expect(found.rows.find((r: { respondentId: string }) => r.respondentId === 'R1').gate).toEqual({ age: '34' });
     expect((await pm.get(`/projects/${p.id}/vendors/${fcId}/report?all=true`).expect(200)).body.rows).toHaveLength(12);
     await pm.get(`/projects/${p.id}/vendors/${fcId}/report?take=500`).expect(400);
