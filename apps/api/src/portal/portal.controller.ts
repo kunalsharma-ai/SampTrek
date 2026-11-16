@@ -119,7 +119,7 @@ export class VendorPortalController {
         projectCountry: {
           select: {
             countryCode: true, language: true, targetGroup: true, loiMinutes: true, irPercent: true, currency: true, status: true,
-            project: { select: { id: true, projectCode: true, name: true, vendorTitle: true, status: true, category: true, devices: true } },
+            project: { select: { id: true, projectCode: true, name: true, vendorTitle: true, workOrderNo: true, status: true, category: true, devices: true } },
           },
         },
       },
@@ -190,7 +190,7 @@ export class VendorPortalController {
         payout: true,
         startedAt: true,
         outcomeAt: true,
-        project: { select: { projectCode: true, name: true, vendorTitle: true } },
+        project: { select: { projectCode: true, name: true, vendorTitle: true, workOrderNo: true } },
         projectCountry: { select: { countryCode: true, currency: true } },
       },
     });

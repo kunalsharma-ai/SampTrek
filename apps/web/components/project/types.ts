@@ -61,7 +61,7 @@ export interface ProjectDetail {
   redirectMode: 'STATIC' | 'DYNAMIC' | 'HYBRID';
   client: { id: string; name: string; code?: string; status?: string; website?: string | null; logoUrl?: string | null; contacts?: { id: string; name: string; email: string | null; phone: string | null }[] };
   clientContact?: { id: string; name: string; email: string | null; phone: string | null } | null;
-  projectManager: { name: string };
+  projectManager: { id?: string; name: string };
   salesPerson: { name: string } | null;
   devices: Record<string, boolean>;
   security: Record<string, boolean>;

@@ -12,7 +12,6 @@ interface Row { id: string; field: string; value: string; createdAt: string }
 /** The dropdowns people can add to with “Add +”, and where they appear. */
 const FIELDS: { field: CustomField; title: string; where: string; standard: string[] }[] = [
   { field: 'category', title: 'Project categories', where: 'Create project → Category', standard: CATEGORIES },
-  { field: 'targetGroup', title: 'Target groups', where: 'Create project and Add market → Target group', standard: [] },
   { field: 'language', title: 'Languages', where: 'Markets → Language', standard: [] },
   { field: 'uidParam', title: 'Link variables', where: 'Vendors → Link variable (the respondent ID name in entry links)', standard: ['vid', 'uid', 'rid', 'pid', 'id'] },
 ];

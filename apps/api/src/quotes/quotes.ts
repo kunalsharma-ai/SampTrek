@@ -154,7 +154,7 @@ export class QuotesService {
       where: { organizationId: u.organizationId, vendorId, ...(status ? { status } : {}) },
       orderBy: [{ updatedAt: 'desc' }],
       take: 300,
-      include: { projectCountry: { select: { countryCode: true, language: true, project: { select: { projectCode: true, name: true, vendorTitle: true, category: true } } } } },
+      include: { projectCountry: { select: { countryCode: true, language: true, project: { select: { projectCode: true, name: true, vendorTitle: true, workOrderNo: true, category: true } } } } },
     });
     return rows.map((q) => ({
       id: q.id,

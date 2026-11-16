@@ -95,7 +95,7 @@ const LINK_SELECT = {
   lastBlockedAt: true,
   createdAt: true,
   batch: { select: { id: true, label: true, expiresAt: true } },
-  vendorAllocation: { select: { id: true, vendor: { select: { name: true, code: true } }, projectCountry: { select: { countryCode: true } } } },
+  vendorAllocation: { select: { id: true, vendor: { select: { name: true, code: true } }, projectCountry: { select: { countryCode: true, targetGroup: true } } } },
   session: { select: { id: true, status: true, statusDetail: true, startedAt: true, outcomeAt: true } },
 } satisfies Prisma.UniqueLinkSelect;
 
@@ -107,7 +107,7 @@ export function csvRows(links: LinkRow[]) {
     l.key,
     linkUrl(l.key),
     l.vendorAllocation.vendor.name,
-    l.vendorAllocation.projectCountry.countryCode,
+    [l.vendorAllocation.projectCountry.countryCode, l.vendorAllocation.projectCountry.targetGroup].filter(Boolean).join(' · '),
     l.batch.label ?? '',
     shownStatus(l, now),
     l.usedAt,
@@ -179,7 +179,7 @@ export class UniqueLinksService {
       this.prisma.vendorAllocation.findMany({
         where: { projectCountry: { projectId } },
         orderBy: [{ projectCountry: { countryCode: 'asc' } }, { createdAt: 'asc' }],
-        select: { id: true, status: true, uniqueLinksOnly: true, vendor: { select: { id: true, name: true, code: true } }, projectCountry: { select: { id: true, countryCode: true } } },
+        select: { id: true, status: true, uniqueLinksOnly: true, vendor: { select: { id: true, name: true, code: true } }, projectCountry: { select: { id: true, countryCode: true, targetGroup: true } } },
       }),
       this.prisma.uniqueLink.groupBy({ by: ['vendorAllocationId', 'status'], where: { projectId }, _count: { _all: true } }),
       this.prisma.uniqueLink.groupBy({ by: ['vendorAllocationId'], where: { projectId, status: 'UNUSED', batch: { expiresAt: { lt: now } } }, _count: { _all: true } }),
@@ -221,6 +221,7 @@ export class UniqueLinksService {
           allocationId: b.vendorAllocationId,
           vendor: a?.vendor.name ?? '',
           countryCode: a?.projectCountry.countryCode ?? '',
+          targetGroup: a?.projectCountry.targetGroup ?? null,
           count: b.count,
           unused: isExpired ? 0 : st('UNUSED'),
           used: st('USED'),

@@ -47,7 +47,7 @@ const EXAMPLE_UID = 'PANEL-1001';
 /** The client's live survey link as SampTrek opens it: {session_token} filled, or token= added. */
 function surveyWithToken(link: string, token: string, country: string, projectCode: string) {
   try {
-    if (link.includes('{session_token}')) return link.replace(/\{session_token\}/g, token).replace(/\{country_code\}/g, country).replace(/\{project_code\}/g, projectCode);
+    if (/\{(session_token|uid)\}/i.test(link)) return link.replace(/\{(session_token|uid)\}/gi, token).replace(/\{country_code\}/g, country).replace(/\{project_code\}/g, projectCode);
     const u = new URL(link);
     u.searchParams.set('token', token);
     return u.toString();

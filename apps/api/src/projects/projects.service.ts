@@ -417,13 +417,25 @@ export class ProjectsService {
 
   async update(u: AuthUser, id: string, body: z.infer<typeof updateProjectSchema>) {
     const p = await this.mustOwn(u, id);
+    const clientChanged = !!body.clientId && body.clientId !== p.clientId;
+    if (clientChanged) {
+      const client = await this.prisma.client.findFirst({ where: { id: body.clientId, organizationId: u.organizationId } });
+      if (!client) throw new BadRequestException('Client not found');
+      if (client.status !== 'ACTIVE') throw new BadRequestException({ message: `${client.name} is inactive. Make the client active first (Clients page).`, code: 'CLIENT_INACTIVE' });
+    }
+    const clientId = body.clientId ?? p.clientId;
     if (body.clientContactId) {
-      const ok = await this.prisma.clientContact.count({ where: { id: body.clientContactId, clientId: p.clientId } });
+      const ok = await this.prisma.clientContact.count({ where: { id: body.clientContactId, clientId } });
       if (!ok) throw new BadRequestException('Client contact does not belong to this client');
+    }
+    for (const uid of [body.salesPersonId, body.projectManagerId].filter(Boolean) as string[]) {
+      if (!(await this.prisma.user.count({ where: { id: uid, organizationId: u.organizationId } }))) throw new BadRequestException('Unknown user');
     }
     if (body.workOrderNo && body.workOrderNo !== p.workOrderNo) await claimManualWorkOrder(this.prisma, u.organizationId, body.workOrderNo, id);
     const data: Prisma.ProjectUncheckedUpdateInput = { ...body } as Prisma.ProjectUncheckedUpdateInput;
     if (body.security) data.security = normalizeSecurity(body.security);
+    // A new client keeps no contact of the old one.
+    if (clientChanged && body.clientContactId === undefined) data.clientContactId = null;
     for (const k of ['gateQuestions', 'prescreen'] as const) {
       const v = body[k];
       if (v !== undefined) data[k] = v === null || v.length === 0 ? null : (v as Prisma.InputJsonValue);

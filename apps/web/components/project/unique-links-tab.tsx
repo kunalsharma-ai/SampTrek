@@ -15,7 +15,7 @@ interface AllocationSummary {
   status: string;
   uniqueLinksOnly: boolean;
   vendor: { id: string; name: string; code: string };
-  projectCountry: { id: string; countryCode: string };
+  projectCountry: { id: string; countryCode: string; targetGroup?: string | null };
   total: number;
   unused: number;
   used: number;
@@ -30,6 +30,7 @@ interface Batch {
   allocationId: string;
   vendor: string;
   countryCode: string;
+  targetGroup?: string | null;
   count: number;
   unused: number;
   used: number;
@@ -48,7 +49,7 @@ interface LinkRow {
   usedAt: string | null;
   blockedAttempts: number;
   batch: { id: string; label: string | null };
-  vendorAllocation: { vendor: { name: string }; projectCountry: { countryCode: string } };
+  vendorAllocation: { vendor: { name: string }; projectCountry: { countryCode: string; targetGroup?: string | null } };
   session: { status: string; statusDetail: string | null } | null;
 }
 
@@ -60,6 +61,8 @@ const LINK_TONE: Record<LinkRow['shownStatus'], string> = {
 };
 const LINK_LABEL: Record<LinkRow['shownStatus'], string> = { UNUSED: 'Unused', USED: 'Used', REVOKED: 'Revoked', EXPIRED: 'Expired' };
 const PAGE = 100;
+/** "JP · Economic": the same country can be a market twice, once per target group. */
+const market = (code: string, targetGroup?: string | null) => [code, targetGroup].filter(Boolean).join(' · ');
 const when = (d: string | null) => (d ? new Date(d).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : '');
 
 export function UniqueLinksTab({ project, editable }: { project: ProjectDetail; editable: boolean }) {
@@ -136,7 +139,8 @@ export function UniqueLinksTab({ project, editable }: { project: ProjectDetail; 
   const download = (extra: Record<string, string>) => downloadFile(`/projects/${project.id}/unique-links/export.csv?${new URLSearchParams(Object.entries(extra).filter(([, v]) => v)).toString()}`, `${project.projectCode}-unique-links.csv`).catch(setError);
 
   if (!summary) return error ? <ErrorBox error={error} /> : <Loading />;
-  const allocations = summary.allocations;
+  // Grouped by vendor (then market), like the Vendors & links tab.
+  const allocations = [...summary.allocations].sort((a, b) => a.vendor.name.localeCompare(b.vendor.name) || market(a.projectCountry.countryCode, a.projectCountry.targetGroup).localeCompare(market(b.projectCountry.countryCode, b.projectCountry.targetGroup)));
   const count = Number(form.count);
   const canGenerate = !!form.allocationId && Number.isInteger(count) && count >= 1 && count <= summary.maxPerBatch && !busy;
 
@@ -159,7 +163,7 @@ export function UniqueLinksTab({ project, editable }: { project: ProjectDetail; 
               <Field label="Vendor and market">
                 <select className="input" value={form.allocationId} onChange={(e) => setForm({ ...form, allocationId: e.target.value })}>
                   <option value="">Choose…</option>
-                  {allocations.map((a) => <option key={a.id} value={a.id}>{flag(a.projectCountry.countryCode)} {a.projectCountry.countryCode} · {a.vendor.name}</option>)}
+                  {allocations.map((a) => <option key={a.id} value={a.id}>{a.vendor.name} · {flag(a.projectCountry.countryCode)} {market(a.projectCountry.countryCode, a.projectCountry.targetGroup)}</option>)}
                 </select>
               </Field>
               <Field label="How many links" hint={`Up to ${summary.maxPerBatch.toLocaleString()} at a time`}>
@@ -189,15 +193,15 @@ export function UniqueLinksTab({ project, editable }: { project: ProjectDetail; 
             <table className="w-full min-w-[820px]">
               <thead className="border-y border-line bg-sunken/60">
                 <tr>
-                  <th className="th">Market</th><th className="th">Vendor</th><th className="th text-right">Links</th><th className="th text-right">Unused</th><th className="th text-right">Used</th>
+                  <th className="th">Vendor</th><th className="th">Market</th><th className="th text-right">Links</th><th className="th text-right">Unused</th><th className="th text-right">Used</th>
                   <th className="th text-right">Completes</th><th className="th text-right">Revoked / expired</th><th className="th">Unique links only</th><th className="th" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-line">
                 {allocations.map((a) => (
                   <tr key={a.id}>
-                    <td className="td whitespace-nowrap">{flag(a.projectCountry.countryCode)} {countryName(a.projectCountry.countryCode)}</td>
                     <td className="td font-medium">{a.vendor.name}</td>
+                    <td className="td whitespace-nowrap">{flag(a.projectCountry.countryCode)} {countryName(a.projectCountry.countryCode)}{a.projectCountry.targetGroup && <span className="ml-1.5 chip bg-brand/10 text-brand">{a.projectCountry.targetGroup}</span>}</td>
                     <td className="td text-right tabular-nums">{a.total.toLocaleString()}</td>
                     <td className="td text-right tabular-nums">{a.unused.toLocaleString()}</td>
                     <td className="td text-right tabular-nums">{a.used.toLocaleString()}{a.inSurvey > 0 && <span className="ml-1 text-xs text-muted">({a.inSurvey} in survey)</span>}</td>
@@ -205,7 +209,7 @@ export function UniqueLinksTab({ project, editable }: { project: ProjectDetail; 
                     <td className="td text-right tabular-nums">{(a.revoked + a.expired).toLocaleString()}</td>
                     <td className="td">
                       <div className="flex items-center gap-2" title="When on, the shared live vendor link stops working and respondents can only enter with a unique link. The test link keeps working.">
-                        <Toggle checked={a.uniqueLinksOnly} label={`Unique links only for ${a.vendor.name} in ${a.projectCountry.countryCode}`} onChange={(v) => (editable ? setOnly(a, v) : undefined)} />
+                        <Toggle checked={a.uniqueLinksOnly} label={`Unique links only for ${a.vendor.name} in ${market(a.projectCountry.countryCode, a.projectCountry.targetGroup)}`} onChange={(v) => (editable ? setOnly(a, v) : undefined)} />
                         <span className="text-xs text-muted">{a.uniqueLinksOnly ? 'Shared link closed' : 'Shared link open'}</span>
                       </div>
                     </td>
@@ -233,7 +237,7 @@ export function UniqueLinksTab({ project, editable }: { project: ProjectDetail; 
                     <td className="td font-medium">
                       <button className="text-left hover:underline" onClick={() => { setFilter({ allocationId: '', batchId: b.id, status: '', q: '' }); setPage(0); }}>{b.label || 'Untitled batch'}</button>
                     </td>
-                    <td className="td whitespace-nowrap">{flag(b.countryCode)} {b.countryCode} · {b.vendor}</td>
+                    <td className="td whitespace-nowrap">{flag(b.countryCode)} {market(b.countryCode, b.targetGroup)} · {b.vendor}</td>
                     <td className="td text-right tabular-nums">{b.count.toLocaleString()}</td>
                     <td className="td text-right tabular-nums">{b.unused.toLocaleString()}</td>
                     <td className="td text-right tabular-nums">{b.used.toLocaleString()}</td>
@@ -266,13 +270,13 @@ export function UniqueLinksTab({ project, editable }: { project: ProjectDetail; 
           <Field label="Vendor and market">
             <select className="input" value={filter.allocationId} onChange={(e) => { setFilter({ ...filter, allocationId: e.target.value, batchId: '' }); setPage(0); }}>
               <option value="">All</option>
-              {allocations.map((a) => <option key={a.id} value={a.id}>{a.projectCountry.countryCode} · {a.vendor.name}</option>)}
+              {allocations.map((a) => <option key={a.id} value={a.id}>{a.vendor.name} · {market(a.projectCountry.countryCode, a.projectCountry.targetGroup)}</option>)}
             </select>
           </Field>
           <Field label="Batch">
             <select className="input" value={filter.batchId} onChange={(e) => { setFilter({ ...filter, batchId: e.target.value }); setPage(0); }}>
               <option value="">All</option>
-              {summary.batches.map((b) => <option key={b.id} value={b.id}>{b.label || 'Untitled batch'} ({b.countryCode} · {b.vendor})</option>)}
+              {summary.batches.map((b) => <option key={b.id} value={b.id}>{b.label || 'Untitled batch'} ({market(b.countryCode, b.targetGroup)} · {b.vendor})</option>)}
             </select>
           </Field>
           <Field label="Status">
@@ -306,7 +310,7 @@ export function UniqueLinksTab({ project, editable }: { project: ProjectDetail; 
                   {links.rows.map((l) => (
                     <tr key={l.id}>
                       <td className="td font-mono text-xs"><Copyable text={l.key} label="link key" /></td>
-                      <td className="td whitespace-nowrap text-sm">{l.vendorAllocation.projectCountry.countryCode} · {l.vendorAllocation.vendor.name}</td>
+                      <td className="td whitespace-nowrap text-sm">{market(l.vendorAllocation.projectCountry.countryCode, l.vendorAllocation.projectCountry.targetGroup)} · {l.vendorAllocation.vendor.name}</td>
                       <td className="td"><span className={clsx('chip', LINK_TONE[l.shownStatus])}>{LINK_LABEL[l.shownStatus]}</span></td>
                       <td className="td">{l.session ? <OutcomeChip status={l.session.status} /> : <span className="text-xs text-muted">{l.shownStatus === 'USED' ? 'Turned away at entry' : '–'}</span>}</td>
                       <td className="td whitespace-nowrap text-xs text-muted">{when(l.usedAt)}</td>
