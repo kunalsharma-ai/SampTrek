@@ -62,12 +62,37 @@ export class VendorInsightsController {
     return out;
   }
 
+  /**
+   * What each vendor cost in the period: payouts of its completes that the client did not reject,
+   * by currency (feedback 2026-11-16: expense on the Vendors page).
+   */
+  private async expense(organizationId: string, days: number) {
+    const since = new Date(Date.now() - days * 86_400_000);
+    const sums = await this.prisma.respondentSession.groupBy({
+      by: ['vendorAllocationId'],
+      where: { organizationId, isTest: false, status: 'COMPLETE', approval: { not: 'REJECTED' }, startedAt: { gte: since } },
+      _sum: { payout: true },
+    });
+    const allocs = await this.prisma.vendorAllocation.findMany({ where: { id: { in: sums.map((x) => x.vendorAllocationId) } }, select: { id: true, vendorId: true, projectCountry: { select: { currency: true } } } });
+    const byId = new Map(allocs.map((a) => [a.id, a]));
+    const out = new Map<string, Record<string, number>>();
+    for (const r of sums) {
+      const a = byId.get(r.vendorAllocationId);
+      if (!a) continue;
+      const m = out.get(a.vendorId) ?? {};
+      m[a.projectCountry.currency] = Math.round(((m[a.projectCountry.currency] ?? 0) + Number(r._sum.payout ?? 0)) * 100) / 100;
+      out.set(a.vendorId, m);
+    }
+    return out;
+  }
+
   @Get('vendors/scores')
   async scores(@CurrentUser() u: AuthUser, @Query(new ZodPipe(daysSchema)) q: z.infer<typeof daysSchema>) {
-    const [vendors, { vendors: stats }, committed] = await Promise.all([
+    const [vendors, { vendors: stats }, committed, expense] = await Promise.all([
       this.prisma.vendor.findMany({ where: { organizationId: u.organizationId }, orderBy: { name: 'asc' }, select: { id: true, name: true, code: true, status: true, capacity: { select: { countryCode: true } } } }),
       this.scoring.stats(u.organizationId, q.days),
       this.committed(u.organizationId),
+      this.expense(u.organizationId, q.days),
     ]);
     return {
       days: q.days,
@@ -75,7 +100,7 @@ export class VendorInsightsController {
       vendors: vendors.map((v) => {
         const s = stats.get(v.id) ?? emptyStats();
         const load = [...committed].filter(([k]) => k.startsWith(`${v.id}|`)).reduce((a, [, n]) => a + n, 0);
-        return { id: v.id, name: v.name, code: v.code, status: v.status, markets: v.capacity.map((c) => c.countryCode).sort(), committed: load, stats: view(s), ...scoreVendor(s) };
+        return { id: v.id, name: v.name, code: v.code, status: v.status, markets: v.capacity.map((c) => c.countryCode).sort(), committed: load, stats: view(s), expense: expense.get(v.id) ?? {}, ...scoreVendor(s) };
       }),
     };
   }

@@ -1,7 +1,7 @@
 import { EntitlementsService } from '../super-admin/entitlements';
 import { VendorInsightsController } from './vendor-insights.controller';
 import { VendorScoringService } from './vendor-scoring';
-import { Body, ConflictException, Controller, Get, Module, NotFoundException, Param, Patch, Post, Query } from '@nestjs/common';
+import { BadRequestException, Body, ConflictException, Controller, Get, Module, NotFoundException, Param, Patch, Post, Query } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { CurrentUser, EDITORS, Roles } from '../auth/decorators';
@@ -14,6 +14,8 @@ import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { LOGO_SELECT, withLogoUrl } from '../parties/logos';
 import { isKnownMacro, macrosIn } from '../redirects/redirect-resolver';
+import { cleanOverrides, securityOverridesSchema } from '../survey/vendor-security';
+import { uidParam } from '../projects/projects.schemas';
 import { OUTCOME_STATUSES, parseVendorRedirectUrls, VendorRedirectUrls } from '../redirects/redirect.types';
 
 const domain = z.string().regex(/^(\*\.)?[a-z0-9.-]+\.[a-z]{2,}$|^localhost$/i, 'Use a hostname like example.com or *.example.com');
@@ -62,8 +64,19 @@ const fields = {
   redirectAllowedDomains: z.array(domain).max(100).default([]),
   callbackUrlTemplate: optional(callbackUrl),
   redirectUrls: redirectUrlsSchema.optional(),
+  /** Security switches that differ for this vendor in every project (survey/vendor-security.ts). */
+  securityOverrides: securityOverridesSchema.nullable().optional(),
+  /** Percent of the client CPI paid to the vendor (60 → a 10 USD CPI pays 6 USD). */
+  payoutSharePercent: z.number().min(0).max(100).nullable().optional(),
+  /** Added to every market of each new project (needs a payout share). */
+  autoAssign: z.boolean().optional(),
+  /** Link variable name and the placeholder the vendor's system fills, e.g. vid and {TID}. */
+  uidParam: optional(uidParam),
+  uidMacro: optional(z.string().trim().regex(/^(\{[A-Za-z0-9_]{1,40}\}|\[[A-Za-z0-9_]{1,40}\])$/, 'Write the placeholder as the vendor does, e.g. {TID} or [RID]')),
 };
-const createSchema = z.object({ ...fields, code: codeField });
+const needsShare = (b: { autoAssign?: boolean; payoutSharePercent?: number | null }) => !b.autoAssign || b.payoutSharePercent != null;
+const SHARE_MESSAGE = { message: 'Set a payout share to auto assign this vendor (its payout in each new project comes from it)', path: ['payoutSharePercent'] };
+const createSchema = z.object({ ...fields, code: codeField }).refine(needsShare, SHARE_MESSAGE);
 const updateSchema = z.object({
   ...fields,
   name: fields.name.optional(),
@@ -91,7 +104,7 @@ const importSchema = z.object({ rows: z.array(z.record(z.string(), z.unknown()))
 
 const PUBLIC_FIELDS = {
   id: true, name: true, code: true, status: true, website: true, contactName: true, contactEmail: true, contactPhone: true,
-  redirectAllowedDomains: true, callbackUrlTemplate: true, redirectUrls: true, createdAt: true, ...LOGO_SELECT,
+  redirectAllowedDomains: true, callbackUrlTemplate: true, redirectUrls: true, securityOverrides: true, payoutSharePercent: true, autoAssign: true, uidParam: true, uidMacro: true, createdAt: true, ...LOGO_SELECT,
 } as const;
 
 function cleanUrls(raw: Record<string, string | null | undefined> | undefined): VendorRedirectUrls {
@@ -154,6 +167,7 @@ export class VendorsController {
       data: {
         organizationId: u.organizationId,
         ...body,
+        securityOverrides: cleanOverrides(body.securityOverrides) ?? null,
         redirectUrls: Object.keys(urls).length ? urls : null,
         redirectAllowedDomains: withRedirectHosts(body.redirectAllowedDomains, urls),
         callbackSecret: randomToken(32),
@@ -226,12 +240,14 @@ export class VendorsController {
     const found = await this.prisma.vendor.findFirst({ where: { id, organizationId: u.organizationId } });
     if (!found) throw new NotFoundException();
     if (body.code && body.code !== found.code) await this.assertCodeFree(u.organizationId, body.code);
-    const { redirectUrls, redirectAllowedDomains, ...rest } = body;
+    if (!needsShare({ autoAssign: body.autoAssign ?? found.autoAssign, payoutSharePercent: body.payoutSharePercent !== undefined ? body.payoutSharePercent : found.payoutSharePercent })) throw new BadRequestException(SHARE_MESSAGE.message);
+    const { redirectUrls, redirectAllowedDomains, securityOverrides, ...rest } = body;
     const urls = redirectUrls !== undefined ? cleanUrls(redirectUrls) : parseVendorRedirectUrls(found.redirectUrls);
     await this.prisma.vendor.update({
       where: { id },
       data: {
         ...rest,
+        ...(securityOverrides !== undefined ? { securityOverrides: cleanOverrides(securityOverrides) ?? null } : {}),
         ...(redirectUrls !== undefined ? { redirectUrls: Object.keys(urls).length ? urls : null } : {}),
         ...(redirectAllowedDomains !== undefined || redirectUrls !== undefined
           ? { redirectAllowedDomains: withRedirectHosts(redirectAllowedDomains ?? found.redirectAllowedDomains, urls) }

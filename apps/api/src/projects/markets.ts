@@ -52,3 +52,19 @@ export function assertPayout(payout: number, clientCpi: number, currency: string
     issues: ['Lower the vendor payout, or confirm that this market should run at a loss.'],
   });
 }
+
+/** Payout from a vendor's share of the client CPI, rounded to cents: 10 × 60% = 6. */
+export function payoutFromShare(clientCpi: number, sharePercent: number): number {
+  return Math.round(clientCpi * sharePercent) / 100;
+}
+
+/** The payout for a vendor in a market: the one given, else from the vendor's share; null when neither exists. */
+export function resolvePayout(given: number | undefined, clientCpi: number, vendor: { payoutSharePercent?: number | null }): number | null {
+  if (given !== undefined) return given;
+  return vendor.payoutSharePercent != null ? payoutFromShare(clientCpi, vendor.payoutSharePercent) : null;
+}
+
+/** "?vid={TID}": the link variable and the vendor's placeholder ("[UID]" when it has none). */
+export function entryQuery(uidParam: string, vendor: { uidMacro?: string | null }): string {
+  return `${encodeURIComponent(uidParam)}=${vendor.uidMacro || '[UID]'}`;
+}

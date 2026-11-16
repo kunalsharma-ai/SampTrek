@@ -1,6 +1,6 @@
 'use client';
 import clsx from 'clsx';
-import { AlertTriangle, ClipboardPaste, FileStack, LayoutTemplate, Monitor, Plus, Search, Smartphone, Sparkles, Tablet, Trash2, Trophy, Users } from 'lucide-react';
+import { AlertTriangle, ClipboardPaste, FileStack, LayoutTemplate, Plus, Search, Sparkles, Trash2, Trophy, Users } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
@@ -10,7 +10,7 @@ import { AddableSelect, loadCustomOptions } from '@/components/form/option-selec
 import { BulkFill } from '@/components/project/bulk-fill';
 import { cleanQuestion, QuestionBuilder, questionProblems } from '@/components/project/question-builder';
 import { BriefBanner, BriefReader, useBriefAvailability, type BriefInfo } from '@/components/project/brief-reader';
-import { MobileOsPicker, devicesProblem, withOs, type DeviceSettings } from '@/components/project/mobile-os';
+import { DevicePicker, devicesProblem, withOs, type DeviceSettings } from '@/components/project/mobile-os';
 import { ErrorBox, Field, Loading, PageHeader, Section, Toggle } from '@/components/ui';
 import { api, get, post } from '@/lib/api';
 import { surveyLinkProblem } from '@/lib/survey-link';
@@ -39,6 +39,8 @@ interface CountryRow {
 
 /** A vendor added to every market on create; the payout is per complete in the project currency. */
 interface VendorRow { vendorId: string; cpi: Num; uidParam: string }
+/** Vendors as listed by /vendors: payout share, auto assign and link variable come from the Vendors page. */
+type VendorOpt = PartyOpt & { payoutSharePercent?: number | null; autoAssign?: boolean; uidParam?: string | null };
 
 const SHARED_DEFAULTS = { targetGroup: '', loiMinutes: 15 as Num, irPercent: 30 as Num, cpi: '' as Num, targetCompletes: 100 as Num, liveSurveyUrl: '', testSurveyUrl: '' };
 
@@ -96,7 +98,7 @@ function CreateProjectPage() {
   const [shared, setShared] = useState(SHARED_DEFAULTS);
   const [rows, setRows] = useState<CountryRow[]>([]);
   const [currency, setCurrency] = useState('USD');
-  const [vendorOpts, setVendorOpts] = useState<PartyOpt[]>([]);
+  const [vendorOpts, setVendorOpts] = useState<VendorOpt[]>([]);
   const [numbering, setNumbering] = useState<{ nextWorkOrderNo: string; lastWorkOrderNo: string | null } | null>(null);
   const [vendors, setVendors] = useState<VendorRow[]>([]);
   const [rememberVendors, setRememberVendors] = useState(false);
@@ -128,7 +130,14 @@ function CreateProjectPage() {
     get<UserOpt[]>('/users').then(setUsers).catch(setError);
     get<ProjectTemplate[]>('/project-templates').then(setTemplates).catch(() => setTemplates([]));
     get<DraftRow[]>('/project-drafts').then(setDrafts).catch(() => setDrafts([]));
-    get<PartyOpt[]>('/vendors?status=ACTIVE').then(setVendorOpts).catch(() => setVendorOpts([]));
+    get<VendorOpt[]>('/vendors?status=ACTIVE')
+      .then((opts) => {
+        setVendorOpts(opts);
+        // Vendors marked "Auto assign" join every new project (feedback 2026-11-16); they can be removed here.
+        const auto = opts.filter((o) => o.autoAssign && o.payoutSharePercent != null);
+        if (!d && auto.length) setVendors((vs) => [...vs, ...auto.filter((o) => !vs.some((x) => x.vendorId === o.id)).map((o) => ({ vendorId: o.id, cpi: '' as Num, uidParam: o.uidParam || 'vid' }))]);
+      })
+      .catch(() => setVendorOpts([]));
     const t = params.get('template');
     const d = params.get('draft');
     // Vendors the team chose to preselect on every new project.
@@ -352,11 +361,12 @@ function CreateProjectPage() {
     setError(null);
     const clean = <T extends object>(o: T) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== '' && v !== undefined)) as Partial<T>;
     const chosen = vendors.filter((v) => v.vendorId);
-    if (chosen.some((v) => v.cpi === '')) {
-      setError({ message: 'Give every vendor a payout CPI, or remove the vendor.' });
+    const shareOf = (id: string) => vendorOpts.find((o) => o.id === id)?.payoutSharePercent ?? null;
+    if (chosen.some((v) => v.cpi === '' && shareOf(v.vendorId) === null)) {
+      setError({ message: 'Give every vendor a payout CPI (or a payout share on the Vendors page), or remove the vendor.' });
       return;
     }
-    const above = chosen.filter((v) => minCpi !== null && Number(v.cpi) > minCpi);
+    const above = chosen.filter((v) => v.cpi !== '' && minCpi !== null && Number(v.cpi) > minCpi);
     if (above.length && !confirm(`${above.map((v) => vendorOpts.find((o) => o.id === v.vendorId)?.name ?? 'A vendor').join(', ')}: payout is higher than the client CPI (${minCpi} ${currency}) in at least one market. Create the project anyway?`)) return;
     const gate = security.gateSurvey ? gateQuestions.map(cleanQuestion) : [];
     if (gate.some((q) => questionProblems(q).length)) {
@@ -374,7 +384,8 @@ function CreateProjectPage() {
         currency,
         defaults: clean({ ...shared, currency }),
         countries: rows.map((r) => clean({ ...r, currency: undefined })),
-        vendors: chosen.map((v) => ({ vendorId: v.vendorId, cpi: Number(v.cpi), uidParam: v.uidParam || 'vid', allowAboveCpi: above.includes(v) })),
+        vendors: chosen.map((v) => ({ vendorId: v.vendorId, ...(v.cpi === '' ? {} : { cpi: Number(v.cpi) }), uidParam: v.uidParam || 'vid', allowAboveCpi: above.includes(v) })),
+        autoAssignVendors: false,
         ...(gate.length ? { gateQuestions: gate } : {}),
         ...(wonBid?.status === 'NEW' ? { wonBidId: wonBid.id } : {}),
         ...(template ? { templateId: template.id } : {}),
@@ -693,19 +704,19 @@ function CreateProjectPage() {
                 return (
                   <div key={i} className="grid grid-cols-1 items-start gap-2 rounded-lg bg-sunken/50 p-3 sm:grid-cols-[minmax(0,1fr)_140px_140px_auto]">
                     <Field label="Vendor">
-                      <PartyPicker<PartyOpt>
+                      <PartyPicker<VendorOpt>
                         kind="vendor"
                         parties={vendorOpts}
                         value={v.vendorId}
                         exclude={vendors.map((x) => x.vendorId).filter(Boolean)}
                         taken={vendorOpts.map((o) => o.code)}
-                        onChange={(id) => setVendors((vs) => vs.map((x, n) => (n === i ? { ...x, vendorId: id } : x)))}
+                        onChange={(id) => setVendors((vs) => vs.map((x, n) => (n === i ? { ...x, vendorId: id, uidParam: vendorOpts.find((o) => o.id === id)?.uidParam || x.uidParam } : x)))}
                         onAdded={(o) => setVendorOpts((os) => [...os, o].sort((a, b) => a.name.localeCompare(b.name)))}
                         placeholder="Search vendors, or type a new name to add"
                       />
                     </Field>
                     <Field label={`Payout CPI (${currency})`}>
-                      <input className={clsx('input', high && 'border-warn')} type="number" min={0} step="0.01" value={v.cpi} onChange={(e) => setVendors(vendors.map((x, n) => (n === i ? { ...x, cpi: num(e.target.value) } : x)))} />
+                      <input className={clsx('input', high && 'border-warn')} type="number" min={0} step="0.01" value={v.cpi} placeholder={vendorOpts.find((o) => o.id === v.vendorId)?.payoutSharePercent != null ? `${vendorOpts.find((o) => o.id === v.vendorId)!.payoutSharePercent}% of CPI` : undefined} title="Empty: the vendor's payout share of each market's client CPI" onChange={(e) => setVendors(vendors.map((x, n) => (n === i ? { ...x, cpi: num(e.target.value) } : x)))} />
                     </Field>
                     <Field label="Link variable">
                       <AddableSelect field="uidParam" base={['vid', 'uid', 'rid', 'pid', 'id']} value={v.uidParam} onChange={(val) => setVendors((vs) => vs.map((x, n) => (n === i ? { ...x, uidParam: val } : x)))} placeholder="vid" />
@@ -752,12 +763,7 @@ function CreateProjectPage() {
           </Section>
           <Section title="Devices">
             <div className="space-y-3">
-              {([['desktop', Monitor], ['mobile', Smartphone], ['tablet', Tablet]] as const).map(([k, Icon]) => (
-                <div key={k} className="flex items-center justify-between text-sm">
-                  <span className="flex items-center gap-2"><Icon className="h-4 w-4 text-muted" /> {k.charAt(0).toUpperCase() + k.slice(1)}</span>
-                  <Toggle label={k} checked={devices[k]} onChange={(v) => setDevices({ ...devices, [k]: v })} />
-                </div>
-              )).flatMap((row, i) => (i === 1 ? [row, <MobileOsPicker key="os" devices={devices} onChange={setDevices} />] : [row]))}
+              <DevicePicker devices={devices} onChange={setDevices} />
               {devicesProblem(devices) && <p className="text-xs text-warn">{devicesProblem(devices)}</p>}
             </div>
           </Section>

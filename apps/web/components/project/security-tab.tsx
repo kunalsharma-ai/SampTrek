@@ -1,5 +1,5 @@
 'use client';
-import { MobileOsPicker, devicesProblem, withOs, type DeviceSettings } from './mobile-os';
+import { DevicePicker, describeDevices, devicesProblem, withOs, type DeviceSettings } from './mobile-os';
 import clsx from 'clsx';
 import { Bot, Copy, ExternalLink, Fingerprint, Globe2, Link2, ListChecks, MonitorSmartphone, ShieldCheck } from 'lucide-react';
 import Link from 'next/link';
@@ -182,18 +182,8 @@ export function SecurityTab({ project, editable, reload }: { project: ProjectDet
             ))}
             <div>
               <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted"><MonitorSmartphone className="h-3.5 w-3.5" /> Devices allowed<InfoTip id="device.allowed" /></div>
-              <div className="flex flex-wrap gap-4 rounded-lg border border-line p-3">
-                {(['desktop', 'mobile', 'tablet'] as const).map((d) => (
-                  <label key={d} className="flex items-center gap-2 text-sm capitalize">
-                    {editable ? <Toggle checked={devices[d] !== false} onChange={(v) => setDevices({ ...devices, [d]: v })} label={d} /> : null}
-                    {d}{!editable && `: ${devices[d] !== false ? 'yes' : 'no'}`}
-                  </label>
-                ))}
-                <div className="basis-full">
-                  {editable ? <MobileOsPicker devices={devices} onChange={setDevices} /> : <span className="pl-6 text-sm text-muted">Mobile systems: {[devices.android && 'Android', devices.ios && 'iOS'].filter(Boolean).join(', ') || 'none'}</span>}
-                </div>
-                {editable && devicesProblem(devices) && <p className="basis-full text-xs text-warn">{devicesProblem(devices)}</p>}
-              </div>
+              {editable ? <DevicePicker devices={devices} onChange={setDevices} /> : <p className="rounded-lg border border-line p-3 text-sm">{describeDevices(devices)}</p>}
+              {editable && devicesProblem(devices) && <p className="mt-1 text-xs text-warn">{devicesProblem(devices)}</p>}
             </div>
           </div>
         </Section>

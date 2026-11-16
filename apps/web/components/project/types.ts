@@ -11,7 +11,7 @@ export interface AutoPauseState { config: string; done: Record<string, { reason:
 export interface Allocation {
   id: string;
   vendorId: string;
-  vendor: { id: string; name: string; code: string; status?: string; logoUrl?: string | null; contactName?: string | null; contactEmail?: string | null };
+  vendor: { id: string; name: string; code: string; status?: string; logoUrl?: string | null; contactName?: string | null; contactEmail?: string | null; securityOverrides?: Record<string, boolean> | null };
   status: string;
   cpi: string;
   targetCompletes: number;
@@ -22,6 +22,8 @@ export interface Allocation {
   callbackUrlTemplate: string | null;
   /** Shared live link closed; respondents enter only with one-time unique links. */
   uniqueLinksOnly?: boolean;
+  /** Security for this vendor in this project (same on all its markets); missing switches follow the vendor, then the project. */
+  securityOverrides?: Record<string, boolean> | null;
   stats: Stats;
 }
 

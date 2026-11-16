@@ -25,6 +25,7 @@ export const REASON_LABELS: Record<string, string> = {
   BAD_SIGNATURE: 'Entry link signature missing or wrong',
   DEVICE_NOT_ALLOWED: 'Device type not allowed',
   MOBILE_OS_NOT_ALLOWED: 'Phone system (Android / iOS) not allowed',
+  OS_NOT_ALLOWED: 'Operating system not allowed on this device (desktop or tablet)',
   TOR_EXIT: 'Connected through TOR',
   GEO_MISMATCH: 'Located outside the survey country',
   CAPTCHA_FAILED: 'Failed the background bot check',
@@ -72,20 +73,69 @@ export function deviceOs(ua: string | undefined): DeviceOs {
   return 'other';
 }
 
+export type DesktopOs = 'windows' | 'mac' | 'linux' | 'other';
+
+/** Desktop operating system. iPads on iPadOS 13+ send a Mac user agent and count as Mac. ChromeOS is "other". */
+export function desktopOs(ua: string | undefined): DesktopOs {
+  const u = ua ?? '';
+  if (/Windows/i.test(u)) return 'windows';
+  if (/Macintosh|Mac OS X/i.test(u)) return 'mac';
+  if (/CrOS/i.test(u)) return 'other';
+  if (/Linux|X11/i.test(u)) return 'linux';
+  return 'other';
+}
+
 /**
- * Device type must be allowed; on a phone, the operating system too when the project allows only
- * Android or only iOS (a phone on another system is then refused as well).
+ * Devices and systems allowed at entry. Every key is optional and missing means allowed, except
+ * `mobileOther`: when it is missing (projects saved before it existed), phones on another system
+ * are allowed only while both Android and iOS are.
  */
-export function checkDevice(devices: { desktop?: boolean; mobile?: boolean; tablet?: boolean; android?: boolean; ios?: boolean } | null | undefined, ua: string | undefined): CheckResult {
+export interface DeviceRules {
+  desktop?: boolean;
+  mobile?: boolean;
+  tablet?: boolean;
+  /** Phone systems. */
+  android?: boolean;
+  ios?: boolean;
+  mobileOther?: boolean;
+  /** Desktop systems. */
+  windows?: boolean;
+  mac?: boolean;
+  linux?: boolean;
+  desktopOther?: boolean;
+  /** Tablet systems. */
+  tabletAndroid?: boolean;
+  tabletIos?: boolean;
+  tabletOther?: boolean;
+}
+
+/** Whether the system is allowed on that device type, and the reason code when it is not. */
+function osAllowed(d: DeviceRules | null | undefined, type: DeviceType, ua: string | undefined): { ok: boolean; os: string } {
+  if (type === 'desktop') {
+    const os = desktopOs(ua);
+    const key = ({ windows: 'windows', mac: 'mac', linux: 'linux', other: 'desktopOther' } as const)[os];
+    return { ok: d?.[key] !== false, os };
+  }
+  const os = deviceOs(ua);
+  if (type === 'tablet') {
+    const key = ({ android: 'tabletAndroid', ios: 'tabletIos', other: 'tabletOther' } as const)[os];
+    return { ok: d?.[key] !== false, os };
+  }
+  const android = d?.android !== false;
+  const ios = d?.ios !== false;
+  const other = d?.mobileOther ?? (android && ios);
+  return { ok: os === 'android' ? android : os === 'ios' ? ios : other, os };
+}
+
+/**
+ * Device type must be allowed, and then its operating system: Windows / Mac / Linux on desktops,
+ * Android / iOS / other on phones and on tablets.
+ */
+export function checkDevice(devices: DeviceRules | null | undefined, ua: string | undefined): CheckResult {
   const type = deviceType(ua);
   if (devices?.[type] === false) return { check: 'device', ok: false, reason: 'DEVICE_NOT_ALLOWED', status: 'SECURITY_REJECT', note: type };
-  if (type === 'mobile') {
-    const android = devices?.android !== false;
-    const ios = devices?.ios !== false;
-    const os = deviceOs(ua);
-    const allowed = os === 'android' ? android : os === 'ios' ? ios : android && ios;
-    if (!allowed) return { check: 'device', ok: false, reason: 'MOBILE_OS_NOT_ALLOWED', status: 'SECURITY_REJECT', note: type };
-  }
+  const os = osAllowed(devices, type, ua);
+  if (!os.ok) return { check: 'device', ok: false, reason: type === 'mobile' ? 'MOBILE_OS_NOT_ALLOWED' : 'OS_NOT_ALLOWED', status: 'SECURITY_REJECT', note: type };
   return { check: 'device', ok: true, note: type };
 }
 

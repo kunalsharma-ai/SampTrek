@@ -29,14 +29,23 @@ export const securitySchema = z
   .strict();
 
 /**
- * Devices allowed at entry. `android` and `ios` narrow Mobile to those phone systems; with both on,
- * every phone is allowed (including other systems), as before.
+ * Devices allowed at entry, and the operating systems allowed on each: Windows / Mac / Linux / other
+ * on desktops, Android / iOS / other on phones (android, ios, mobileOther) and on tablets.
+ * mobileOther may be missing on older projects: other phones are then allowed only with both Android and iOS.
  */
+const on = () => z.boolean().default(true);
 export const devicesSchema = z
-  .object({ desktop: z.boolean().default(true), mobile: z.boolean().default(true), tablet: z.boolean().default(true), android: z.boolean().default(true), ios: z.boolean().default(true) })
+  .object({
+    desktop: on(), mobile: on(), tablet: on(),
+    android: on(), ios: on(), mobileOther: z.boolean().optional(),
+    windows: on(), mac: on(), linux: on(), desktopOther: on(),
+    tabletAndroid: on(), tabletIos: on(), tabletOther: on(),
+  })
   .strict()
   .refine((d) => d.desktop || d.mobile || d.tablet, 'Allow at least one device')
-  .refine((d) => !d.mobile || d.android || d.ios, 'Choose Android, iOS or both for mobile');
+  .refine((d) => !d.mobile || d.android || d.ios || d.mobileOther, 'Choose at least one phone system (Android, iOS or other)')
+  .refine((d) => !d.desktop || d.windows || d.mac || d.linux || d.desktopOther, 'Choose at least one desktop system (Windows, Mac, Linux or other)')
+  .refine((d) => !d.tablet || d.tabletAndroid || d.tabletIos || d.tabletOther, 'Choose at least one tablet system (Android, iOS or other)');
 
 /**
  * The client survey link must say where our UID goes ({uid}, or the older {session_token}), so every
@@ -78,13 +87,15 @@ export const addCountrySchema = countryInputSchema.extend({
   copyVendors: z.boolean().default(false),
 });
 
-const uidParam = z.string().regex(/^[A-Za-z0-9_.-]{1,64}$/, 'Use letters, numbers, dot, dash or underscore');
+export const uidParam = z.string().regex(/^[A-Za-z0-9_.-]{1,64}$/, 'Use letters, numbers, dot, dash or underscore');
 
 /** A vendor added to every market when the project is created. Payout defaults to nothing: it must be given. */
 export const createVendorSchema = z.object({
   vendorId: z.string().min(1),
-  cpi: z.number().min(0).max(100000),
-  uidParam: uidParam.default('vid'),
+  /** Left out: the vendor's payout share of each market's client CPI (Vendors page). */
+  cpi: z.number().min(0).max(100000).optional(),
+  /** Left out: the vendor's own link variable, else "vid". */
+  uidParam: uidParam.optional(),
   /** Lets the payout be higher than the client CPI (a loss-making market, on purpose). */
   allowAboveCpi: z.boolean().default(false),
 });
@@ -107,7 +118,7 @@ export const createProjectSchema = z.object({
   salesPersonId: z.string().optional(),
   projectManagerId: z.string().optional(),
   description: z.string().max(20000).optional(),
-  devices: devicesSchema.default({ desktop: true, mobile: true, tablet: true, android: true, ios: true }),
+  devices: devicesSchema.default({ desktop: true, mobile: true, tablet: true, android: true, ios: true, windows: true, mac: true, linux: true, desktopOther: true, tabletAndroid: true, tabletIos: true, tabletOther: true }),
   security: securitySchema.default({} as never),
   redirectMode: z.enum(REDIRECT_MODES).default('HYBRID'),
   redirectConfig: redirectConfigSchema.optional(),
@@ -119,6 +130,8 @@ export const createProjectSchema = z.object({
   speederCheck: speederCheckSchema.optional(),
   fraudRules: fraudRulesSchema.optional(),
   vendors: z.array(createVendorSchema).max(50).default([]),
+  /** Adds the vendors marked "auto assign" (Vendors page) to every market. The web form lists them itself and sends false. */
+  autoAssignVendors: z.boolean().default(true),
   fieldStartAt: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD').optional(),
   fieldEndAt: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD').optional(),
 }).refine((b) => !b.fieldStartAt || !b.fieldEndAt || b.fieldStartAt <= b.fieldEndAt, { message: 'The field end date must be on or after the start date', path: ['fieldEndAt'] });
@@ -189,10 +202,11 @@ export const cloneProjectSchema = z.object({
 
 export const allocationSchema = z.object({
   vendorId: z.string().min(1),
-  cpi: z.number().min(0).max(100000),
+  /** Left out: the vendor's payout share of the client CPI (Vendors page). */
+  cpi: z.number().min(0).max(100000).optional(),
   targetCompletes: z.number().int().min(1),
-  /** The web app sends "vid" (the team's convention); API callers that leave it out keep "uid". */
-  uidParam: uidParam.default('uid'),
+  /** The web app sends "vid" (the team's convention); left out, the vendor's own link variable, else "uid". */
+  uidParam: uidParam.optional(),
   callbackUrlTemplate: z.string().url().optional(),
   allowAboveCpi: z.boolean().default(false),
 });

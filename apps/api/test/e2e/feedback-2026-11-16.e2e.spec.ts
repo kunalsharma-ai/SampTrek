@@ -98,3 +98,170 @@ describe('Feedback 2026-11-16: project setup (e2e)', () => {
     expect(summary.allocations.map((a: { projectCountry: { targetGroup: string } }) => a.projectCountry.targetGroup).sort()).toEqual(['Economic', 'Surgeon']);
   });
 });
+
+describe('Feedback 2026-11-16: security per vendor and per system (e2e)', () => {
+  let app: INestApplication;
+  let prisma: PrismaClient;
+  let pm: ReturnType<typeof api>;
+  let clientId: string;
+  let loose: string;
+  let strict: string;
+  const http = () => request(app.getHttpServer());
+  const MAC = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/605.1.15 Version/17.5 Safari/605.1.15';
+
+  beforeAll(async () => {
+    ({ app, prisma } = await createApp());
+    const a = await makeOrg(prisma, 'fb1116sec');
+    pm = api(app, await login(app, a.users.PROJECT_MANAGER.email));
+    clientId = (await pm.post('/clients', { name: 'Sec Client', code: 'SC' }).expect(201)).body.id;
+    loose = (await pm.post('/vendors', { name: 'Loose', code: 'LO', securityOverrides: { duplicateDetection: false } }).expect(201)).body.id;
+    strict = (await pm.post('/vendors', { name: 'Strict', code: 'ST' }).expect(201)).body.id;
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  async function liveProject(devices?: object) {
+    const p = (
+      await pm
+        .post('/projects', {
+          name: 'Per vendor security', category: 'B2C', clientId,
+          security: { duplicateDetection: true },
+          ...(devices ? { devices } : {}),
+          defaults: { language: 'en', loiMinutes: 10, irPercent: 50, cpi: 10, targetCompletes: 50, liveSurveyUrl: 'https://client.example.com/s?rid={uid}' },
+          countries: [{ countryCode: 'US' }],
+          vendors: [{ vendorId: loose, cpi: 4 }, { vendorId: strict, cpi: 4 }],
+        })
+        .expect(201)
+    ).body;
+    await pm.patch(`/projects/${p.id}/countries/${p.countries[0].id}`, { status: 'LIVE' }).expect(200);
+    await pm.patch(`/projects/${p.id}`, { status: 'LIVE' }).expect(200);
+    const code = (v: string) => p.countries[0].allocations.find((x: { vendorId: string }) => x.vendorId === v).entryCode;
+    return { p, code };
+  }
+  const status = async (uid: string) => (await prisma.respondentSession.findFirst({ where: { vendorRespondentId: uid } }))?.status;
+
+  it('lets a vendor skip duplicate detection, and lets the project set it back for that vendor', async () => {
+    const { p, code } = await liveProject();
+    const enter = (v: string, uid: string) => http().get(`/s/${code(v)}?vid=${uid}`).set('User-Agent', MAC).set('X-Forwarded-For', '203.0.113.9').expect(302);
+    await enter(loose, 'L1');
+    await enter(loose, 'L2');
+    expect(await status('L2')).toBe('STARTED');
+    await enter(strict, 'S1');
+    expect(await status('S1')).toBe('DUPLICATE');
+
+    await pm.put(`/projects/${p.id}/vendors/${loose}/security`, { overrides: { duplicateDetection: true } }).expect(200);
+    await enter(loose, 'L3');
+    expect(await status('L3')).toBe('DUPLICATE');
+    await pm.put(`/projects/${p.id}/vendors/${loose}/security`, { overrides: { nonsense: true } }).expect(400);
+  });
+
+  it('blocks a desktop system that is unticked, unless device limits are off for the vendor', async () => {
+    const { p, code } = await liveProject({ desktop: true, mobile: true, tablet: true, mac: false });
+    await http().get(`/s/${code(strict)}?vid=M1`).set('User-Agent', MAC).set('X-Forwarded-For', '203.0.113.20').expect(302);
+    expect(await prisma.respondentSession.findFirst({ where: { vendorRespondentId: 'M1' } })).toMatchObject({ status: 'SECURITY_REJECT', statusDetail: 'OS_NOT_ALLOWED' });
+    await pm.put(`/projects/${p.id}/vendors/${strict}/security`, { overrides: { deviceLimits: false } }).expect(200);
+    await http().get(`/s/${code(strict)}?vid=M2`).set('User-Agent', MAC).set('X-Forwarded-For', '203.0.113.21').expect(302);
+    expect(await status('M2')).toBe('STARTED');
+  });
+});
+
+describe('Feedback 2026-11-16: vendor setup and report (e2e)', () => {
+  let app: INestApplication;
+  let prisma: PrismaClient;
+  let pm: ReturnType<typeof api>;
+  let clientId: string;
+  const http = () => request(app.getHttpServer());
+
+  beforeAll(async () => {
+    ({ app, prisma } = await createApp());
+    const a = await makeOrg(prisma, 'fb1116vend');
+    pm = api(app, await login(app, a.users.PROJECT_MANAGER.email));
+    clientId = (await pm.post('/clients', { name: 'Vend Client', code: 'VC' }).expect(201)).body.id;
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  const create = (o: object = {}) =>
+    pm.post('/projects', {
+      name: 'Vendor setup', category: 'B2C', clientId,
+      security: { gateSurvey: true },
+      gateQuestions: [{ id: 'age', type: 'number', text: 'How old are you?', validation: { min: 1, max: 120, integer: true } }],
+      defaults: { language: 'en', loiMinutes: 10, irPercent: 50, cpi: 10, targetCompletes: 50, liveSurveyUrl: 'https://client.example.com/s?rid={uid}' },
+      countries: [{ countryCode: 'US' }, { countryCode: 'GB', cpi: 20 }],
+      ...o,
+    });
+
+  it('needs a payout share to auto assign, and adds auto-assigned vendors paid their share', async () => {
+    await pm.post('/vendors', { name: 'No share', code: 'NS', autoAssign: true }).expect(400);
+    const fc = (await pm.post('/vendors', { name: 'FC', code: 'FC', payoutSharePercent: 60, autoAssign: true, uidParam: 'vid', uidMacro: '{TID}' }).expect(201)).body;
+    expect(fc).toMatchObject({ payoutSharePercent: 60, autoAssign: true, uidMacro: '{TID}' });
+    await pm.patch(`/vendors/${fc.id}`, { payoutSharePercent: null }).expect(400);
+    await pm.patch(`/vendors/${fc.id}`, { uidMacro: 'TID' }).expect(400);
+
+    const p = (await create().expect(201)).body;
+    const us = p.countries.find((c: { countryCode: string }) => c.countryCode === 'US');
+    const gb = p.countries.find((c: { countryCode: string }) => c.countryCode === 'GB');
+    expect(Number(us.allocations[0].cpi)).toBe(6);
+    expect(Number(gb.allocations[0].cpi)).toBe(12);
+    expect(us.allocations[0].entryLink).toMatch(/\?vid=\{TID\}$/);
+
+    // The web form lists the vendors itself and turns the server-side auto assign off.
+    const q = (await create({ autoAssignVendors: false }).expect(201)).body;
+    expect(q.countries[0].allocations).toHaveLength(0);
+    // Added by hand without a payout: the share fills it.
+    const a = (await pm.post(`/projects/${q.id}/countries/${q.countries[0].id}/allocations`, { vendorId: fc.id, targetCompletes: 10 }).expect(201)).body;
+    expect(a).toMatchObject({ uidParam: 'vid' });
+    expect(Number(a.cpi)).toBeGreaterThan(0);
+    const other = (await pm.post('/vendors', { name: 'Manual', code: 'MA' }).expect(201)).body.id;
+    await pm.post(`/projects/${q.id}/countries/${q.countries[0].id}/allocations`, { vendorId: other, targetCompletes: 10 }).expect(400);
+    await pm.patch(`/vendors/${fc.id}`, { autoAssign: false }).expect(200);
+  });
+
+  const us = (p: { countries: { countryCode: string }[] }) => p.countries.find((c) => c.countryCode === 'US') as unknown as { id: string; allocations: { entryCode: string }[] };
+
+  it('treats an unfilled {TID} as no respondent ID', async () => {
+    const fcId = (await prisma.vendor.findFirst({ where: { code: 'FC', organization: { slug: 'fb1116vend' } } }))!.id;
+    const p = (await create({ vendors: [{ vendorId: fcId }] }).expect(201)).body;
+    const fc = us(p).allocations[0];
+    await pm.patch(`/projects/${p.id}/countries/${us(p).id}`, { status: 'LIVE' }).expect(200);
+    await pm.patch(`/projects/${p.id}`, { status: 'LIVE' }).expect(200);
+    expect((await http().get(`/s/${fc.entryCode}?vid={TID}`).expect(302)).headers.location).toMatch(/security/i);
+  });
+
+  it('reports one vendor’s respondents with paging, search and gate answers', async () => {
+    const fcId = (await prisma.vendor.findFirst({ where: { code: 'FC', organization: { slug: 'fb1116vend' } } }))!.id;
+    const p = (await create({ vendors: [{ vendorId: fcId, cpi: 3 }] }).expect(201)).body;
+    const c = us(p);
+    await pm.patch(`/projects/${p.id}/countries/${c.id}`, { status: 'LIVE' }).expect(200);
+    await pm.patch(`/projects/${p.id}`, { status: 'LIVE' }).expect(200);
+    for (let i = 1; i <= 12; i++) await http().get(`/s/${c.allocations[0].entryCode}?vid=R${i}`).set('X-Forwarded-For', `198.51.100.${60 + i}`).expect(302);
+    const s = await prisma.respondentSession.findFirst({ where: { projectId: p.id, vendorRespondentId: 'R1' } });
+    await prisma.respondentSession.update({ where: { id: s!.id }, data: { answers: { gate: { age: { value: 34, label: '34' } } } } });
+
+    const page1 = (await pm.get(`/projects/${p.id}/vendors/${fcId}/report?take=10`).expect(200)).body;
+    expect(page1.total).toBe(12);
+    expect(page1.rows).toHaveLength(10);
+    expect(page1.gateQuestions).toEqual([{ id: 'age', text: 'How old are you?' }]);
+    expect(page1.rows[0]).toEqual(expect.objectContaining({ vendor: 'FC (FC)', country: 'US', status: 'STARTED' }));
+    expect(page1.rows[0].ipId).toMatch(/^[0-9a-f]{10}$/);
+    const page2 = (await pm.get(`/projects/${p.id}/vendors/${fcId}/report?take=10&skip=10`).expect(200)).body;
+    expect(page2.rows).toHaveLength(2);
+    const found = (await pm.get(`/projects/${p.id}/vendors/${fcId}/report?q=R1`).expect(200)).body;
+    expect(found.rows.map((r: { respondentId: string }) => r.respondentId).sort()).toEqual(['R1', 'R10', 'R11', 'R12']);
+    expect(found.rows.find((r: { respondentId: string }) => r.respondentId === 'R1').gate).toEqual({ age: '34' });
+    expect((await pm.get(`/projects/${p.id}/vendors/${fcId}/report?all=true`).expect(200)).body.rows).toHaveLength(12);
+    await pm.get(`/projects/${p.id}/vendors/${fcId}/report?take=500`).expect(400);
+  });
+
+  it('shows each vendor’s expense on the Vendors page', async () => {
+    const fcId = (await prisma.vendor.findFirst({ where: { code: 'FC', organization: { slug: 'fb1116vend' } } }))!.id;
+    const s = await prisma.respondentSession.findFirst({ where: { vendorAllocation: { vendorId: fcId }, isTest: false } });
+    await prisma.respondentSession.update({ where: { id: s!.id }, data: { status: 'COMPLETE', payout: 3, outcomeAt: new Date() } });
+    const scores = (await pm.get('/vendors/scores').expect(200)).body;
+    expect(scores.vendors.find((v: { id: string }) => v.id === fcId).expense).toEqual({ USD: 3 });
+  });
+});

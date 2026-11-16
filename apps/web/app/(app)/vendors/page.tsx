@@ -15,7 +15,9 @@ import { Empty, ErrorBox, Loading, PageHeader, Section } from '@/components/ui';
 import { hostOf } from '@/lib/suggest';
 import { get, patch, post } from '@/lib/api';
 
-interface ScoreRow { id: string; score: number | null; grade: Grade; markets: string[]; committed: number; stats: { clicks: number; completes: number; qualityRate: number } }
+interface ScoreRow { id: string; score: number | null; grade: Grade; markets: string[]; committed: number; expense?: Record<string, number>; stats: { clicks: number; completes: number; qualityRate: number; projects: number; approved: number; rejected: number; rejectionRate: number | null } }
+/** "USD 1,240.00 · EUR 300.00" */
+const expenseText = (e?: Record<string, number>) => (e && Object.keys(e).length ? Object.entries(e).map(([c, n]) => `${c} ${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`).join(' · ') : '–');
 type VendorRow = VendorDetail & { _count: { allocations: number } };
 
 const VENDOR_IMPORT_COLUMNS: ImportColumn[] = [
@@ -133,13 +135,17 @@ export default function VendorsPage() {
         </div>
         <div className="card overflow-x-auto">
           <table className="w-full">
-            <thead className="border-b border-line bg-sunken/60"><tr><th className="th">Vendor</th><th className="th">Code</th><th className="th">Status</th><th className="th">Score (180 days)</th><th className="th">Markets</th><th className="th text-right">Owed on live projects</th><th className="th">Redirects</th><th className="th">Callback</th><th className="th text-right">Allocations</th>{canEdit(me) && <th className="th" />}</tr></thead>
+            <thead className="border-b border-line bg-sunken/60"><tr><th className="th">Vendor</th><th className="th">Code</th><th className="th">Status</th><th className="th">Score (180 days)</th><th className="th">Markets</th><th className="th text-right" title="Projects with this vendor in the last 180 days">Projects</th><th className="th text-right" title="Completes the client approved after reconciliation (180 days)">Completes after reconcile</th><th className="th text-right" title="Approved out of reconciled completes (180 days)">Success</th><th className="th text-right" title="Payouts for completes not rejected (180 days)">Expense</th><th className="th text-right">Owed on live projects</th><th className="th">Redirects</th><th className="th">Callback</th><th className="th text-right">Allocations</th>{canEdit(me) && <th className="th" />}</tr></thead>
             <tbody className="divide-y divide-line">
               {shown.map((v) => (
                 <tr key={v.id} className={editing?.id === v.id ? 'bg-brand/5' : undefined}>
-                  <td className="td font-medium"><span className="flex items-center gap-2"><PartyLogo url={v.logoUrl} name={v.name} size={28} /><Link className="hover:text-brand hover:underline" href={`/vendors/${v.id}`}>{v.name}</Link></span></td><td className="td"><Copyable text={v.code} label={`${v.name} vendor ID`} /></td><td className="td"><StatusSwitch kind="vendor" id={v.id} name={v.name} status={v.status} editable={canEdit(me)} onError={setError} onChange={(st) => setRows((rs) => rs?.map((r) => (r.id === v.id ? { ...r, status: st } : r)) ?? rs)} /></td>
+                  <td className="td font-medium"><span className="flex items-center gap-2"><PartyLogo url={v.logoUrl} name={v.name} size={28} /><Link className="hover:text-brand hover:underline" href={`/vendors/${v.id}`}>{v.name}</Link>{v.autoAssign && <span className="chip bg-brand/10 text-brand" title="Added to every new project">Auto</span>}{v.payoutSharePercent != null && <span className="chip bg-sunken text-muted" title="Payout share of the client CPI">{v.payoutSharePercent}%</span>}</span></td><td className="td"><Copyable text={v.code} label={`${v.name} vendor ID`} /></td><td className="td"><StatusSwitch kind="vendor" id={v.id} name={v.name} status={v.status} editable={canEdit(me)} onError={setError} onChange={(st) => setRows((rs) => rs?.map((r) => (r.id === v.id ? { ...r, status: st } : r)) ?? rs)} /></td>
                   <td className="td"><Link href={`/vendors/${v.id}`}><ScoreBadge score={scores.get(v.id)?.score ?? null} grade={scores.get(v.id)?.grade ?? null} /></Link></td>
                   <td className="td text-sm" title={scores.get(v.id)?.markets.join(', ')}>{scores.get(v.id)?.markets.length ? scores.get(v.id)!.markets.slice(0, 6).map(flag).join(' ') + (scores.get(v.id)!.markets.length > 6 ? ` +${scores.get(v.id)!.markets.length - 6}` : '') : <span className="text-muted">–</span>}</td>
+                  <td className="td text-right tabular-nums">{scores.get(v.id)?.stats.projects ?? 0}</td>
+                  <td className="td text-right tabular-nums" title={`${scores.get(v.id)?.stats.completes ?? 0} completes in total`}>{scores.get(v.id)?.stats.approved ?? 0}</td>
+                  <td className="td text-right tabular-nums">{scores.get(v.id)?.stats.rejectionRate == null ? '–' : `${Math.round((100 - scores.get(v.id)!.stats.rejectionRate!) * 10) / 10}%`}</td>
+                  <td className="td whitespace-nowrap text-right tabular-nums text-xs">{expenseText(scores.get(v.id)?.expense)}</td>
                   <td className="td text-right tabular-nums">{scores.get(v.id)?.committed ?? 0}</td>
                   <td className="td text-xs"><RedirectCount urls={v.redirectUrls} /></td>
                   <td className="td max-w-[240px] truncate font-mono text-xs text-muted" title={v.callbackUrlTemplate ?? ''}>{v.callbackUrlTemplate ? hostOf(v.callbackUrlTemplate) ?? 'set' : '–'}</td>

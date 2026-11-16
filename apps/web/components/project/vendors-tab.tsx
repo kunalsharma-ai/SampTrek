@@ -1,16 +1,18 @@
 'use client';
 import clsx from 'clsx';
-import { AlertTriangle, Check, Copy, MessageSquareQuote, Pause, Pencil, Play, Plus, Save, Sparkles } from 'lucide-react';
+import { AlertTriangle, Check, Copy, MessageSquareQuote, Pause, Pencil, FileBarChart, Play, Plus, Save, ShieldCheck, Sparkles } from 'lucide-react';
 import { QuotesPanel } from './quotes-panel';
 import { VendorSuggestions } from './vendor-suggestions';
 import { VendorTitle } from './vendor-title';
+import { VendorReport } from './vendor-report';
 import { useEffect, useMemo, useState } from 'react';
 import { AddableSelect } from '@/components/form/option-select';
 import { PartyLogo } from '@/components/parties/logo';
 import { maskEmail } from '@/lib/mask';
 import { PartyPicker, type PartyOpt } from '@/components/parties/quick-add';
 import { Empty, ErrorBox, Field, Progress, Section, StatusChip, money } from '@/components/ui';
-import { get, patch, post } from '@/lib/api';
+import { api, get, patch, post } from '@/lib/api';
+import { SecurityOverridesEditor, describeOverrides } from '@/components/vendors/security-overrides';
 import { countryName, flag } from '@/lib/countries';
 import type { Option } from '@/lib/types';
 import { withPayoutCheck } from './payout';
@@ -39,20 +41,31 @@ const marketName = (c: Pick<Country, 'countryCode' | 'targetGroup'>) => `${count
 const EMPTY_FORM = { vendorId: '', cpi: '', targetCompletes: '', uidParam: 'vid', applyToAll: false };
 
 export function VendorsTab({ project, editable, reload }: { project: ProjectDetail; editable: boolean; reload: () => void }) {
-  const [vendors, setVendors] = useState<PartyOpt[]>([]);
+  const [vendors, setVendors] = useState<(PartyOpt & { payoutSharePercent?: number | null; uidParam?: string | null })[]>([]);
   const [adding, setAdding] = useState<string | null>(null);
   const [suggesting, setSuggesting] = useState<string | null>(null);
   const [asking, setAsking] = useState<string | null>(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [editing, setEditing] = useState<{ id: string; cpi: string; targetCompletes: string; uidParam: string } | null>(null);
   // By vendor is the default; a project with no vendor yet opens by market, where vendors are added.
+  const [securityFor, setSecurityFor] = useState<string | null>(null);
+  const [reportFor, setReportFor] = useState<{ id: string; name: string } | null>(null);
   const [view, setView] = useState<'market' | 'vendor'>(() => (project.countries.some((c) => c.allocations.length) ? 'vendor' : 'market'));
   const [error, setError] = useState<unknown>(null);
 
   useEffect(() => {
     // Only active vendors can be added; inactive ones already on the project stay.
-    get<PartyOpt[]>('/vendors?status=ACTIVE').then(setVendors).catch(setError);
+    get<(PartyOpt & { payoutSharePercent?: number | null; uidParam?: string | null })[]>('/vendors?status=ACTIVE').then(setVendors).catch(setError);
   }, []);
+
+  const shareOf = (vendorId: string) => vendors.find((v) => v.id === vendorId)?.payoutSharePercent ?? null;
+  /** "60% share: 6.00 payout, 4.00 profit" for the chosen vendor in this market. */
+  const shareHint = (c: Country) => {
+    const pct = shareOf(form.vendorId);
+    if (pct == null || form.cpi !== '') return undefined;
+    const pay = Math.round(Number(c.cpi) * pct) / 100;
+    return `${pct}% share: payout ${money(pay, c.currency)}, profit ${money(Number(c.cpi) - pay, c.currency)}`;
+  };
 
   async function add(countryId: string) {
     setError(null);
@@ -63,7 +76,8 @@ export function VendorsTab({ project, editable, reload }: { project: ProjectDeta
         const done = await withPayoutCheck((allowAboveCpi) =>
           post(`/projects/${project.id}/countries/${c.id}/allocations`, {
             vendorId: form.vendorId,
-            cpi: Number(form.cpi),
+            // Empty payout: the vendor's payout share of this market's client CPI (Vendors page).
+            ...(form.cpi === '' ? {} : { cpi: Number(form.cpi) }),
             targetCompletes: Number(form.targetCompletes || c.targetCompletes),
             uidParam: form.uidParam || 'vid',
             allowAboveCpi: allowAboveCpi || allowAbove,
@@ -178,6 +192,10 @@ export function VendorsTab({ project, editable, reload }: { project: ProjectDeta
     [project.countries],
   );
 
+  /** One vendor's links in every market, ready to paste into an email or a sheet. */
+  const vendorLinks = (rows: { c: Country; a: Allocation }[]) =>
+    ['Market\tLive link\tTest link', ...rows.map(({ c, a }) => [marketName(c), a.uniqueLinksOnly ? 'Unique links only' : a.entryLink, a.testEntryLink].join('\t'))].join('\n');
+
   const byVendor = useMemo(() => {
     const m = new Map<string, { vendor: Allocation['vendor']; rows: { c: Country; a: Allocation }[] }>();
     for (const c of project.countries)
@@ -216,7 +234,7 @@ export function VendorsTab({ project, editable, reload }: { project: ProjectDeta
         </div>
         <p className="mt-3 flex flex-wrap items-center gap-x-2 text-xs text-muted">
           <span>
-            {project.countries.length} {project.countries.length === 1 ? 'market' : 'markets'}, {byVendor.length} {byVendor.length === 1 ? 'vendor' : 'vendors'}. Each vendor gets its own entry link per market. Replace <code className="rounded bg-sunken px-1">[UID]</code> with the vendor&apos;s respondent ID macro. Test links are never billed.
+            {project.countries.length} {project.countries.length === 1 ? 'market' : 'markets'}, {byVendor.length} {byVendor.length === 1 ? 'vendor' : 'vendors'}. Each vendor gets its own entry link per market. Replace <code className="rounded bg-sunken px-1">[UID]</code> with the vendor&apos;s respondent ID macro, or set the vendor&apos;s variable (e.g. <code className="rounded bg-sunken px-1">{'{TID}'}</code>) on the Vendors page to have it filled in. Test links are never billed.
           </span>
           {byVendor.length > 0 && <span className="inline-flex items-center gap-1"><CopyButton text={allLinks} label="Copy all links" /><InfoTip id="vendors.copyAll" /></span>}
         </p>
@@ -259,12 +277,26 @@ export function VendorsTab({ project, editable, reload }: { project: ProjectDeta
         )}
       </Section>
 
+      {reportFor && <VendorReport projectId={project.id} projectCode={project.projectCode} vendorId={reportFor.id} vendorName={reportFor.name} onClose={() => setReportFor(null)} />}
       {view === 'vendor' &&
         (byVendor.length === 0 ? (
           <Empty>No vendors yet. Switch to “By market” to add them.</Empty>
         ) : (
           byVendor.map(({ vendor, rows }) => (
-            <Section key={vendor.id} help="project.vendorCard" title={<span>{vendor.name} <span className="font-normal text-muted">· {vendor.code} · {rows.length} {rows.length === 1 ? 'market' : 'markets'}</span></span>} actions={editable && rows.length > 1 && <PayoutEverywhere currency={rows[0].c.currency} onApply={(cpi) => payoutEverywhere(vendor.id, cpi)} />}>
+            <Section
+              key={vendor.id}
+              help="project.vendorCard"
+              title={<span>{vendor.name} <span className="font-normal text-muted">· {vendor.code} · {rows.length} {rows.length === 1 ? 'market' : 'markets'}</span></span>}
+              actions={
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <CopyButton text={vendorLinks(rows)} label="Copy all links" />
+                  <button className="btn-ghost px-2.5 py-1.5 text-xs" onClick={() => setReportFor(vendor)}><FileBarChart className="h-3.5 w-3.5" /> View report</button>
+                  <button className={clsx('btn-ghost px-2.5 py-1.5 text-xs', Object.keys(rows[0].a.securityOverrides ?? {}).length > 0 && 'text-brand')} aria-expanded={securityFor === vendor.id} onClick={() => setSecurityFor(securityFor === vendor.id ? null : vendor.id)}><ShieldCheck className="h-3.5 w-3.5" /> Security</button>
+                  {editable && rows.length > 1 && <PayoutEverywhere currency={rows[0].c.currency} onApply={(cpi) => payoutEverywhere(vendor.id, cpi)} />}
+                </div>
+              }
+            >
+              {securityFor === vendor.id && <VendorProjectSecurity project={project} vendor={vendor} current={rows[0].a.securityOverrides ?? {}} editable={editable} onSaved={() => { setSecurityFor(null); reload(); }} />}
               <div className="-m-5 overflow-x-auto">
                 <table className="w-full min-w-[720px]">
                   <thead className="border-b border-line bg-sunken/60"><tr><th className="th">Market</th><th className="th">Status</th><th className="th">Completes</th><th className="th">Client CPI</th><th className="th">Payout</th><th className="th">Links</th></tr></thead>
@@ -316,16 +348,16 @@ export function VendorsTab({ project, editable, reload }: { project: ProjectDeta
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-5">
                     <div className="sm:col-span-2">
                       <Field label="Vendor">
-                        <PartyPicker<PartyOpt> kind="vendor" parties={vendors} value={form.vendorId} exclude={c.allocations.map((a) => a.vendorId)} taken={vendors.map((v) => v.code)} onChange={(id) => setForm((f) => ({ ...f, vendorId: id }))} onAdded={(v) => setVendors((vs) => [...vs, v].sort((a, b) => a.name.localeCompare(b.name)))} />
+                        <PartyPicker<PartyOpt> kind="vendor" parties={vendors} value={form.vendorId} exclude={c.allocations.map((a) => a.vendorId)} taken={vendors.map((v) => v.code)} onChange={(id) => setForm((f) => ({ ...f, vendorId: id, uidParam: vendors.find((v) => v.id === id)?.uidParam || f.uidParam }))} onAdded={(v) => setVendors((vs) => [...vs, v].sort((a, b) => a.name.localeCompare(b.name)))} />
                       </Field>
                     </div>
-                    <Field label={`Payout CPI (${c.currency})`}><input className={clsx('input', high && 'border-bad')} type="number" step="0.01" min={0} value={form.cpi} onChange={(e) => setForm({ ...form, cpi: e.target.value })} /></Field>
+                    <Field label={`Payout CPI (${c.currency})`} hint={shareHint(c)}><input className={clsx('input', high && 'border-bad')} type="number" step="0.01" min={0} value={form.cpi} placeholder={shareOf(form.vendorId) != null ? String(Math.round(Number(c.cpi) * shareOf(form.vendorId)!) / 100) : undefined} onChange={(e) => setForm({ ...form, cpi: e.target.value })} /></Field>
                     <Field label="Target completes"><input className="input" type="number" placeholder={String(c.targetCompletes)} value={form.targetCompletes} onChange={(e) => setForm({ ...form, targetCompletes: e.target.value })} /></Field>
                     <Field label="Link variable"><AddableSelect field="uidParam" base={['vid', 'uid', 'rid', 'pid', 'id']} value={form.uidParam} onChange={(v) => setForm((f) => ({ ...f, uidParam: v }))} placeholder="vid" /></Field>
                   </div>
                   {high && <p className="mt-2 flex items-center gap-1.5 text-xs text-bad"><AlertTriangle className="h-3.5 w-3.5" /> The payout is higher than the client CPI ({money(c.cpi, c.currency)}). You will be asked to confirm.</p>}
                   <div className="mt-3 flex flex-wrap items-center gap-3">
-                    <button className="btn-primary" disabled={!form.vendorId || form.cpi === ''} onClick={() => add(c.id)}>Add</button>
+                    <button className="btn-primary" disabled={!form.vendorId || (form.cpi === '' && shareOf(form.vendorId) == null)} onClick={() => add(c.id)}>Add</button>
                     <button className="btn-ghost" onClick={() => setAdding(null)}>Cancel</button>
                     {project.countries.length > 1 && (
                       <label className="flex items-center gap-2 text-xs text-muted"><input type="checkbox" checked={form.applyToAll} onChange={(e) => setForm({ ...form, applyToAll: e.target.checked })} /> Add to every market<InfoTip id="vendors.addEveryMarket" /></label>
@@ -411,6 +443,49 @@ function PayoutEverywhere({ currency, onApply }: { currency: string; onApply: (c
     <div className="flex items-center gap-1.5">
       <input className="input w-28 px-2 py-1 text-xs" type="number" step="0.01" min={0} placeholder={`Payout ${currency}`} aria-label="Payout for every market" value={v} onChange={(e) => setV(e.target.value)} />
       <button className="btn-ghost px-2.5 py-1 text-xs" disabled={v === ''} onClick={() => { onApply(Number(v)); setV(''); }}>Apply to all markets</button>
+    </div>
+  );
+}
+
+/**
+ * Security for one vendor in this project, for all its markets: e.g. no duplicate detection or no
+ * device limits for this vendor only. Wins over the vendor page and the project (feedback 2026-11-16).
+ */
+function VendorProjectSecurity({ project, vendor, current, editable, onSaved }: { project: ProjectDetail; vendor: { id: string; name: string; securityOverrides?: Record<string, boolean> | null }; current: Record<string, boolean>; editable: boolean; onSaved: () => void }) {
+  const [value, setValue] = useState<Record<string, boolean>>(current);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+  const vendorWide = vendor.securityOverrides ?? {};
+  return (
+    <div className="mb-8 rounded-lg border border-line bg-sunken/40 p-4">
+      <p className="mb-3 text-sm text-muted">
+        Security for {vendor.name} in this project, in all its markets. Leave a switch on &quot;Same as&quot; to follow {Object.keys(vendorWide).length ? `the vendor's own settings (${describeOverrides(vendorWide)}), then the project` : 'the project'}.
+      </p>
+      <SecurityOverridesEditor value={value} onChange={setValue} disabled={!editable} projectValues={{ ...(project.security as Record<string, boolean>), ...vendorWide }} />
+      <ErrorBox error={error} />
+      {editable && (
+        <div className="mt-3 flex gap-2">
+          <button
+            className="btn-primary"
+            disabled={busy}
+            onClick={async () => {
+              setBusy(true);
+              setError(null);
+              try {
+                await api(`/projects/${project.id}/vendors/${vendor.id}/security`, { method: 'PUT', json: { overrides: value } });
+                onSaved();
+              } catch (e) {
+                setError(e);
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            {busy ? 'Saving…' : `Save for ${vendor.name}`}
+          </button>
+          {Object.keys(value).length > 0 && <button className="btn-ghost" onClick={() => setValue({})}>Clear (same as project)</button>}
+        </div>
+      )}
     </div>
   );
 }
