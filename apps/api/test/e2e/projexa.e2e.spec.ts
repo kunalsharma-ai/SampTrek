@@ -18,6 +18,10 @@ describe('SampTrek milestone 1 (e2e)', () => {
   let vendorB: string;
 
   const http = () => request(app.getHttpServer());
+  // A different IP for each respondent: one IP may only have one open session per project.
+  let ipN = 0;
+  const freshIp = () => { ipN += 1; return `10.${Math.floor(ipN / 250) % 250}.${(ipN % 250) + 1}.9`; };
+  const openLink = (path: string) => http().get(path).set('X-Forwarded-For', freshIp());
 
   beforeAll(async () => {
     ({ app, prisma } = await createApp());
@@ -139,13 +143,13 @@ describe('SampTrek milestone 1 (e2e)', () => {
     });
 
     it('sends the respondent to the client survey with an opaque token, not the vendor UID', async () => {
-      const res = await http().get(`/s/${usB.entryCode}?uid=SECRET-UID-1`).expect(302);
+      const res = await openLink(`/s/${usB.entryCode}?uid=SECRET-UID-1`).expect(302);
       expect(res.headers.location).toMatch(/^https:\/\/client\.example\.com\/survey\?rid=/);
       expect(res.headers.location).not.toContain('SECRET-UID-1');
     });
 
     it('completes once, maps UID / Vendor ID / Country Code, and queues one callback', async () => {
-      const entry = await http().get(`/s/${usA.entryCode}?uid=U-100`).expect(302);
+      const entry = await openLink(`/s/${usA.entryCode}?uid=U-100`).expect(302);
       const token = new URL(entry.headers.location).searchParams.get('rid')!;
       const done = await http().get(`/r/complete?token=${token}`).expect(302);
       const dest = new URL(done.headers.location);
@@ -171,19 +175,19 @@ describe('SampTrek milestone 1 (e2e)', () => {
     });
 
     it('rejects a second entry with the same UID as DUPLICATE', async () => {
-      const res = await http().get(`/s/${usA.entryCode}?uid=U-100`).expect(302);
+      const res = await openLink(`/s/${usA.entryCode}?uid=U-100`).expect(302);
       expect(res.headers.location).toBe('https://client.example.com/dup');
     });
 
     it('closes entry when the vendor quota is full', async () => {
-      const res = await http().get(`/s/${usA.entryCode}?uid=U-101`).expect(302);
+      const res = await openLink(`/s/${usA.entryCode}?uid=U-101`).expect(302);
       expect(res.headers.location).toBe('https://client.example.com/qf');
     });
 
     it('counts a complete over quota as an overquota, not a complete', async () => {
       // DE target is 1. Two respondents enter, both complete.
-      const t1 = new URL((await http().get(`/s/${deA.entryCode}?uid=D-1`)).headers.location).searchParams.get('rid')!;
-      const t2 = new URL((await http().get(`/s/${deA.entryCode}?uid=D-2`)).headers.location).searchParams.get('rid')!;
+      const t1 = new URL((await openLink(`/s/${deA.entryCode}?uid=D-1`)).headers.location).searchParams.get('rid')!;
+      const t2 = new URL((await openLink(`/s/${deA.entryCode}?uid=D-2`)).headers.location).searchParams.get('rid')!;
       const r1 = await http().get(`/r/complete?token=${t1}`).expect(302);
       const r2 = await http().get(`/r/complete?token=${t2}`).expect(302);
       expect(r1.headers.location).toBe('https://client.example.com/de-a'); // vendor+country override
@@ -195,7 +199,7 @@ describe('SampTrek milestone 1 (e2e)', () => {
     it('rejects unknown and expired tokens as security rejects', async () => {
       const bad = await http().get('/r/complete?token=does-not-exist').expect(302);
       expect(bad.headers.location).toBe(`${BASE}/end/security_reject`);
-      const entry = await http().get(`/s/${usB.entryCode}?uid=EXP-1`);
+      const entry = await openLink(`/s/${usB.entryCode}?uid=EXP-1`);
       const token = new URL(entry.headers.location).searchParams.get('rid')!;
       await prisma.respondentSession.update({ where: { token }, data: { expiresAt: new Date(Date.now() - 1000) } });
       await http().get(`/r/complete?token=${token}`).expect(302);
@@ -204,7 +208,7 @@ describe('SampTrek milestone 1 (e2e)', () => {
     });
 
     it('verifies signed S2S outcomes and rejects tampered ones', async () => {
-      const entry = await http().get(`/s/${usB.entryCode}?uid=S2S-1`);
+      const entry = await openLink(`/s/${usB.entryCode}?uid=S2S-1`);
       const token = new URL(entry.headers.location).searchParams.get('rid')!;
       const client = await prisma.client.findUniqueOrThrow({ where: { id: clientId } });
       const ts = Math.floor(Date.now() / 1000);
@@ -217,7 +221,7 @@ describe('SampTrek milestone 1 (e2e)', () => {
     });
 
     it('test links never create billable completes', async () => {
-      const entry = await http().get(`/s/${usA.testEntryCode}?uid=QA-1`).expect(302);
+      const entry = await openLink(`/s/${usA.testEntryCode}?uid=QA-1`).expect(302);
       const token = new URL(entry.headers.location).searchParams.get('rid')!;
       await http().get(`/r/complete?token=${token}`).expect(302);
       const s = await prisma.respondentSession.findUniqueOrThrow({ where: { token } });
@@ -234,7 +238,7 @@ describe('SampTrek milestone 1 (e2e)', () => {
     });
 
     it('rollback activates a copy of an old version; in-flight sessions keep their version', async () => {
-      const entry = await http().get(`/s/${usB.entryCode}?uid=ROLL-1`);
+      const entry = await openLink(`/s/${usB.entryCode}?uid=ROLL-1`);
       const token = new URL(entry.headers.location).searchParams.get('rid')!;
       const policy = (await pm.get(`/projects/${project.id}/redirects`).expect(200)).body;
       const v1 = policy.versions.find((v: { version: number }) => v.version === 1);

@@ -17,7 +17,10 @@ describe('One-time unique links (e2e)', () => {
   let countryId: string;
   let alloc: { id: string; entryCode: string; testEntryCode: string };
   const http = () => request(app.getHttpServer());
-  const enter = (key: string, ip = 1) => http().get(`/u/${key}`).set('User-Agent', UA).set('X-Forwarded-For', `198.51.100.${ip}`).expect(302);
+  // A different IP for each respondent: one IP may only have one open session per project.
+  let ipN = 0;
+  const freshIp = () => { ipN += 1; return `10.${Math.floor(ipN / 250) % 250}.${(ipN % 250) + 1}.9`; };
+  const enter = (key: string, ip?: number) => http().get(`/u/${key}`).set('User-Agent', UA).set('X-Forwarded-For', ip === undefined ? freshIp() : `198.51.100.${ip}`).expect(302);
 
   beforeAll(async () => {
     ({ app, prisma } = await createApp());
@@ -179,7 +182,7 @@ describe('One-time unique links (e2e)', () => {
     expect(s.allocations[0].uniqueLinksOnly).toBe(true);
     expect(s.allocations[0].completes).toBe(1);
     await pm.post(`/projects/${projectId}/unique-links/allocations/${alloc.id}/only`, { uniqueLinksOnly: false }).expect(201);
-    expect((await http().get(`/s/${alloc.entryCode}?uid=SHARED2`).set('User-Agent', UA).expect(302)).headers.location).toMatch(/client\.example\.com/);
+    expect((await http().get(`/s/${alloc.entryCode}?uid=SHARED2`).set('User-Agent', UA).set('X-Forwarded-For', freshIp()).expect(302)).headers.location).toMatch(/client\.example\.com/);
   });
 
   it('exports links as CSV with status per key, filtered', async () => {

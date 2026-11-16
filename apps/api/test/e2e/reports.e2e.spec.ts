@@ -14,6 +14,10 @@ describe('Fieldwork reports (e2e)', () => {
   let vB: string;
   let projectId: string;
   const http = () => request(app.getHttpServer());
+  // A different IP for each respondent: one IP may only have one open session per project.
+  let ipN = 0;
+  const freshIp = () => { ipN += 1; return `10.${Math.floor(ipN / 250) % 250}.${(ipN % 250) + 1}.9`; };
+  const openLink = (path: string) => http().get(path).set('X-Forwarded-For', freshIp());
 
   /** Builds a live project with US (USD) and DE (EUR) markets and both vendors on US, vendor A on DE. */
   async function seedProject(p: ReturnType<typeof api>, client: string, vendors: string[]) {
@@ -43,7 +47,7 @@ describe('Fieldwork reports (e2e)', () => {
   }
 
   async function run(code: string, uid: string, status?: string) {
-    const entry = await http().get(`/s/${code}?uid=${uid}`).expect(302);
+    const entry = await openLink(`/s/${code}?uid=${uid}`).expect(302);
     if (!status) return;
     const token = new URL(entry.headers.location).searchParams.get('rid')!;
     await http().get(`/r/${status}?token=${token}`).expect(302);
