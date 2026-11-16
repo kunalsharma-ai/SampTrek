@@ -4,9 +4,11 @@ import request from 'supertest';
 import { ZohoBooksService } from '../../src/accounting/zoho-books.service';
 import { IntegrationsHttp, IntegrationsService, isPrivateAddress } from '../../src/integrations/integrations.service';
 import { MailService } from '../../src/mail/mail.service';
+import { sampleonConfig } from '../../src/sampleon/sampleon-config';
+import { hmacSha256, sha256 } from '../../src/common/crypto';
 import { api, createApp, login, makeOrg, resetDb } from './helpers';
 
-const ENV_KEYS = ['SMTP_USER', 'SMTP_PASS', 'SMTP_HOST', 'MAIL_FROM', 'GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET', 'MICROSOFT_CLIENT_ID', 'MICROSOFT_CLIENT_SECRET', 'ZOHO_CLIENT_ID', 'ZOHO_CLIENT_SECRET', 'GEMINI_API_KEY', 'ZOHO_BOOKS_CLIENT_ID', 'ZOHO_BOOKS_CLIENT_SECRET', 'ZOHO_BOOKS_REFRESH_TOKEN', 'ZOHO_BOOKS_ORGANIZATION_ID', 'ZOHO_BOOKS_TENANT', 'XERO_CLIENT_ID', 'XERO_CLIENT_SECRET', 'QUICKBOOKS_CLIENT_ID', 'QUICKBOOKS_CLIENT_SECRET', 'TALLY_URL', 'TALLY_TENANT'];
+const ENV_KEYS = ['SMTP_USER', 'SMTP_PASS', 'SMTP_HOST', 'MAIL_FROM', 'GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET', 'MICROSOFT_CLIENT_ID', 'MICROSOFT_CLIENT_SECRET', 'ZOHO_CLIENT_ID', 'ZOHO_CLIENT_SECRET', 'GEMINI_API_KEY', 'ZOHO_BOOKS_CLIENT_ID', 'ZOHO_BOOKS_CLIENT_SECRET', 'ZOHO_BOOKS_REFRESH_TOKEN', 'ZOHO_BOOKS_ORGANIZATION_ID', 'ZOHO_BOOKS_TENANT', 'XERO_CLIENT_ID', 'XERO_CLIENT_SECRET', 'QUICKBOOKS_CLIENT_ID', 'QUICKBOOKS_CLIENT_SECRET', 'TALLY_URL', 'TALLY_TENANT', 'SAMPLEON_URL', 'SAMPLEON_CLIENT_ID', 'SAMPLEON_CLIENT_SECRET'];
 
 type Reply = { status: number; body: unknown };
 const reply = (status: number, body: unknown) => ({ status, text: async () => (typeof body === 'string' ? body : JSON.stringify(body)) });
@@ -54,7 +56,7 @@ describe('Settings → Integrations (e2e)', () => {
     await pm.get('/integrations/settings').expect(403);
     const r = (await admin.get('/integrations/settings').expect(200)).body;
     expect(r.owner).toBe(true);
-    expect(r.integrations.map((i: { kind: string }) => i.kind)).toEqual(['smtp', 'sso_google', 'sso_microsoft', 'sso_zoho', 'gemini', 'zoho_books', 'xero', 'quickbooks', 'tally', 'bidzo', 'razorpay', 'stripe', 'push', 'backup_storage', 'ip_reputation']);
+    expect(r.integrations.map((i: { kind: string }) => i.kind)).toEqual(['sampleon', 'smtp', 'sso_google', 'sso_microsoft', 'sso_zoho', 'gemini', 'zoho_books', 'xero', 'quickbooks', 'tally', 'bidzo', 'razorpay', 'stripe', 'push', 'backup_storage', 'ip_reputation']);
     const google = r.integrations.find((i: { kind: string }) => i.kind === 'sso_google');
     expect(google.redirectUri).toBe('http://api.samptrek.test/api/v1/auth/sso/google/callback');
     expect(google.steps.join(' ')).toContain('http://api.samptrek.test/api/v1/auth/sso/google/callback');
@@ -225,6 +227,33 @@ describe('Settings → Integrations (e2e)', () => {
     expect((await pm.get('/auth/me').expect(200)).body.links.sampbidxUrl).toBe('https://old.example.com');
     const card = (await admin.get('/integrations/settings').expect(200)).body.integrations.find((i: { kind: string }) => i.kind === 'bidzo');
     expect(JSON.stringify(card)).toContain('https://old.example.com');
+  });
+
+  it('the SampAudience connection is entered here instead of the env: owner only, secret sealed, signed test', async () => {
+    expect((await sampleonConfig()).configured).toBe(false);
+    await otherAdmin.put('/integrations/settings/sampleon', { values: { SAMPLEON_URL: 'https://audience.example.com', SAMPLEON_CLIENT_SECRET: 'x'.repeat(40) } }).expect(403);
+    expect((await admin.put('/integrations/settings/sampleon', { values: { SAMPLEON_URL: 'https://audience.example.com' } }).expect(400)).body.message).toMatch(/Signing secret/);
+    const secret = 'sa-secret-0123456789abcdef0123456789';
+    const saved = (await admin.put('/integrations/settings/sampleon', { values: { SAMPLEON_URL: 'https://audience.example.com/', SAMPLEON_CLIENT_SECRET: secret } }).expect(200)).body;
+    expect(saved.status.state).toBe('connected');
+    expect(saved.values.SAMPLEON_CLIENT_ID).toBe('projexa');
+    expect(JSON.stringify(saved)).not.toContain(secret);
+    const row = await prisma.integrationSetting.findFirstOrThrow({ where: { organizationId: ownerOrgId, kind: 'sampleon' } });
+    expect(row.secrets).not.toContain(secret);
+    // The rest of SampTrek (project tab, outbox, events in) now uses the saved connection.
+    expect(await sampleonConfig()).toEqual({ url: 'https://audience.example.com', clientId: 'projexa', secret, configured: true });
+
+    route = (url) => (url === 'https://audience.example.com/api/v1/attributes' ? { status: 200, body: { attributes: [] } } : { status: 404, body: {} });
+    const t = (await admin.post('/integrations/settings/sampleon/test').expect(200)).body;
+    expect(t).toMatchObject({ ok: true });
+    const h = calls.at(-1)!.headers!;
+    expect(h['X-Sampledge-Client']).toBe('projexa');
+    expect(h['X-Sampledge-Signature']).toBe(`v1=${hmacSha256(secret, `${h['X-Sampledge-Timestamp']}.GET./api/v1/attributes.${sha256('')}`)}`);
+    route = () => ({ status: 401, body: { error: 'bad signature' } });
+    expect((await admin.post('/integrations/settings/sampleon/test').expect(200)).body.message).toMatch(/refused the signature/);
+
+    await admin.delete('/integrations/settings/sampleon').expect((r) => expect([200, 204]).toContain(r.status));
+    expect((await sampleonConfig()).configured).toBe(false);
   });
 
   it('rejects unknown kinds and spots private addresses', async () => {

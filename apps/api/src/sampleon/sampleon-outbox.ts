@@ -20,7 +20,7 @@ import { randomUUID } from 'crypto';
 import { backoffMs, isPermanentFailure } from '../callbacks/callbacks.service';
 import { config } from '../common/config';
 import { PrismaService } from '../prisma/prisma.service';
-import { sampledgeHeaders, sampleonConfig } from './sampleon-config';
+import { sampledgeHeaders, sampleonConfig, type SampleonConfig } from './sampleon-config';
 
 export const SAMPLEON_EVENT_MAX_ATTEMPTS = 12;
 /** A row left in SENDING this long (its worker died) is sent again. */
@@ -59,7 +59,7 @@ export class SampleonOutbox {
    * integration is not configured.
    */
   async projectCreated(tx: Tx, p: { id: string; organizationId: string; projectCode: string; name: string }, countries: string[]) {
-    if (!sampleonConfig().configured) return null;
+    if (!(await sampleonConfig()).configured) return null;
     const envelope = projectCreatedEnvelope(p, countries);
     return tx.sampleonOutboundEvent.create({
       data: { organizationId: p.organizationId, projectId: p.id, eventId: envelope.eventId, type: envelope.type, envelope: envelope as unknown as Prisma.InputJsonValue },
@@ -90,7 +90,7 @@ export class SampleonOutbox {
 
   /** Send due events. A guarded update claims each row, so parallel workers never double-send. */
   async processDue(limit = 25): Promise<number> {
-    const cfg = sampleonConfig();
+    const cfg = await sampleonConfig();
     if (!cfg.configured) return 0;
     const now = new Date();
     const due = await this.prisma.sampleonOutboundEvent.findMany({
@@ -126,7 +126,7 @@ export class SampleonOutbox {
     return processed;
   }
 
-  private async send(cfg: ReturnType<typeof sampleonConfig>, eventId: string, body: string): Promise<{ status: number; error?: string }> {
+  private async send(cfg: SampleonConfig, eventId: string, body: string): Promise<{ status: number; error?: string }> {
     const path = '/api/v1/events';
     try {
       const res = await this.fetcher(cfg.url + path, {

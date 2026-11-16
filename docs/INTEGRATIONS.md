@@ -17,7 +17,7 @@ Every integration is set up by an admin in the app at **Settings → Integration
 
 Captcha keys, the SampBidx webhook secret, alert webhooks and API keys were already set in the app (Settings, and Settings → API and webhooks).
 
-The SAMPLEON connection (audiences from the SUPPLY360 panels) is set on the server for now; see [SAMPLEON_INTEGRATION.md](SAMPLEON_INTEGRATION.md).
+The SampAudience connection (audiences from the SUPPLY360 panels) is set here too, under **SampAudience**, by the admins of the organisation that runs the server; see [SAMPLEON_INTEGRATION.md](SAMPLEON_INTEGRATION.md). The old `SAMPLEON_*` variables are only a fallback.
 
 ## Who "runs the server"
 

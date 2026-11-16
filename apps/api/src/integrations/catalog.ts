@@ -4,7 +4,7 @@
  * feed the same config builders (common/config.ts), and env still works as a fallback.
  */
 
-export const INTEGRATION_KINDS = ['smtp', 'sso_google', 'sso_microsoft', 'sso_zoho', 'gemini', 'zoho_books', 'xero', 'quickbooks', 'tally', 'bidzo', 'razorpay', 'stripe', 'push', 'backup_storage', 'ip_reputation'] as const;
+export const INTEGRATION_KINDS = ['sampleon', 'smtp', 'sso_google', 'sso_microsoft', 'sso_zoho', 'gemini', 'zoho_books', 'xero', 'quickbooks', 'tally', 'bidzo', 'razorpay', 'stripe', 'push', 'backup_storage', 'ip_reputation'] as const;
 /** Payment gateways the server owner uses to collect subscription payments (docs/SUBSCRIPTION_PAYMENTS.md). Never shown to other organisations. */
 export const PAYMENT_KINDS = ['razorpay', 'stripe'] as const;
 export const isPaymentKind = (k: string) => (PAYMENT_KINDS as readonly string[]).includes(k);
@@ -29,7 +29,7 @@ export interface FieldDef {
 }
 export interface KindDef {
   kind: IntegrationKind;
-  group: 'Email' | 'Sign-in' | 'AI' | 'Accounting' | 'SampBidx' | 'Payments' | 'Mobile' | 'Backups' | 'Fraud';
+  group: 'SampAudience' | 'Email' | 'Sign-in' | 'AI' | 'Accounting' | 'SampBidx' | 'Payments' | 'Mobile' | 'Backups' | 'Fraud';
   label: string;
   summary: string;
   /** platform = one per SampTrek server, set by the organisation that runs it (sign-in and accounting apps). */
@@ -63,6 +63,26 @@ const ZOHO_ACCOUNTS = [
 ];
 
 export const CATALOG: KindDef[] = [
+  {
+    // Integration kind and field keys keep the technical id "sampleon" (docs/SAMPLEON_INTEGRATION.md).
+    kind: 'sampleon',
+    group: 'SampAudience',
+    label: 'SampAudience (audience and invitations)',
+    summary: 'Sends audience requests from a project to SampAudience and receives its signed progress events.',
+    scope: 'platform',
+    fields: [
+      { key: 'SAMPLEON_URL', label: 'SampAudience address', type: 'url', required: true, placeholder: 'https://audience.sampledge.com' },
+      { key: 'SAMPLEON_CLIENT_ID', label: 'Client id at SampAudience', type: 'text', default: 'projexa', hint: 'The id SampTrek is registered under in SampAudience → Settings → Connected systems.' },
+      { key: 'SAMPLEON_CLIENT_SECRET', label: 'Signing secret', type: 'secret', required: true, hint: 'Shown once by SampAudience when SampTrek is added there. Signs every call and checks the events it sends back.' },
+    ],
+    steps: [
+      'In SampAudience, open the console → Settings → Connected systems and add SampTrek: client id projexa, kind SampTrek, events sent to {apiOrigin}/api/v1/integrations/sampleon/events.',
+      'Copy the signing secret SampAudience shows (it is shown once).',
+      'Enter the SampAudience address and that secret here, save, and press Test.',
+    ],
+    links: [],
+    testable: true,
+  },
   {
     kind: 'smtp',
     group: 'Email',
