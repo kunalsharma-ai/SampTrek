@@ -22,6 +22,7 @@ import { EntitlementsService } from '../super-admin/entitlements';
 import { dumpToolVersion } from '../backups/backup-core';
 import { BackupStorage, s3From, storageFrom } from '../backups/storage';
 import { parseCidrList } from '../survey/fraud';
+import { sampledgeHeaders, sampleonFrom, setSampleonSource } from '../sampleon/sampleon-config';
 import { BOOTSTRAP_ENV, CATALOG, FieldDef, IntegrationKind, isKind, isPaymentKind, isServerOnlyKind, KIND, KindDef } from './catalog';
 
 export type Source = 'app' | 'env' | null;
@@ -78,7 +79,10 @@ export class IntegrationsService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly entitlements: EntitlementsService,
-  ) {}
+  ) {
+    // The SampAudience connection is read through here, so the one saved in Settings wins over the env.
+    setSampleonSource(async () => (await this.resolve(null, 'sampleon')).env);
+  }
 
   /** The Super Admin can take an integration away from an organisation (docs/SUPER_ADMIN.md). */
   async allowed(org: string, kind: IntegrationKind): Promise<boolean> {
@@ -464,6 +468,16 @@ export class IntegrationsService {
       }
       case 'bidzo':
         return { ok: true, message: 'Nothing to test.' };
+      case 'sampleon': {
+        const c = sampleonFrom((await this.resolve(null, 'sampleon')).env);
+        if (!c.configured) return { ok: false, message: 'Enter the SampAudience address and signing secret first.' };
+        // A signed read: 200 means the address, client id and secret are all right.
+        const path = '/api/v1/attributes';
+        const r = await this.http(c.url + path, { headers: sampledgeHeaders(c.clientId, c.secret, 'GET', path, '') });
+        if (r.status === 401) return { ok: false, message: 'SampAudience refused the signature: check the client id and signing secret.' };
+        if (r.status !== 200) return { ok: false, message: `SampAudience answered ${r.status}: ${(await r.text()).slice(0, 200)}` };
+        return { ok: true, message: `Connected to SampAudience at ${new URL(c.url).host}.` };
+      }
       case 'razorpay': {
         const env = (await this.resolve(null, 'razorpay')).env;
         if (!configuredIn('razorpay', env)) return { ok: false, message: 'Enter the Key ID and Key secret first.' };
@@ -608,6 +622,7 @@ function safeJson(t: string): unknown {
 
 export function configuredIn(kind: IntegrationKind, env: EnvMap): boolean {
   switch (kind) {
+    case 'sampleon': return sampleonFrom(env).configured;
     case 'smtp': return !!smtpFrom(env);
     case 'sso_google': return !!providerSettings('google', env);
     case 'sso_microsoft': return !!providerSettings('microsoft', env);

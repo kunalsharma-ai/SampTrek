@@ -85,7 +85,8 @@ export function SampleonTab({ project, editable }: { project: ProjectDetail; edi
   if (!view.configured) {
     return (
       <Empty>
-        SampAudience is not connected. An administrator sets <code>SAMPLEON_URL</code> and <code>SAMPLEON_CLIENT_SECRET</code> for the API, and registers SampTrek as a client in SampAudience.
+        SampAudience is not connected. An administrator enters its address and signing secret under{' '}
+        <a className="underline" href="/settings/integrations#sampleon">Settings → Integrations → SampAudience</a>, after adding SampTrek under Connected systems in SampAudience.
       </Empty>
     );
   }

@@ -19,6 +19,7 @@ interface Integration {
 interface Data { owner: boolean; integrations: Integration[]; bootstrap: { name: string; why: string; set: boolean }[]; encryptionKeySet: boolean }
 
 const GROUPS: { id: string; title: string; icon: typeof Mail; blurb: string }[] = [
+  { id: 'SampAudience', title: 'SampAudience', icon: Link2, blurb: 'Audience requests, invitations and live progress for projects.' },
   { id: 'Email', title: 'Email', icon: Mail, blurb: 'Reports, invitations, password resets and portal notifications.' },
   { id: 'Sign-in', title: 'Single sign-on apps', icon: KeyRound, blurb: 'The Google, Microsoft and Zoho apps staff sign in through.' },
   { id: 'AI', title: 'AI', icon: Bot, blurb: 'The copilot chat and voice assistant.' },

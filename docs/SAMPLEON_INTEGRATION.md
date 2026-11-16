@@ -19,9 +19,15 @@ and no second quota counter for SAMPLEON respondents: SAMPLEON's completes are s
 
 ## Setup
 
-Set `SAMPLEON_URL`, `SAMPLEON_CLIENT_ID` (default `projexa`) and `SAMPLEON_CLIENT_SECRET` on the
-API (`apps/api/.env.example`). In SAMPLEON, register client `projexa` (system `PROJEXA`, the identifier SampTrek still sends as `source.platform`) with the
-same secret and the webhook URL `{SAMPTREK_API}/api/v1/integrations/sampleon/events`.
+1. In SampAudience, open the console → **Settings → Connected systems** and add client `projexa`
+   (kind SampTrek, i.e. system `PROJEXA`, the identifier SampTrek still sends as `source.platform`) with the
+   webhook URL `{SAMPTREK_API}/api/v1/integrations/sampleon/events`. Copy the signing secret it shows once.
+2. In SampTrek, an admin of the organisation that runs the server opens **Settings → Integrations →
+   SampAudience**, enters the SampAudience address and that secret (client id defaults to `projexa`),
+   saves and presses **Test**. The secret is stored encrypted in the database; no server variable is needed.
+
+Servers set up earlier with `SAMPLEON_URL`, `SAMPLEON_CLIENT_ID` and `SAMPLEON_CLIENT_SECRET` keep working:
+those are the fallback until the connection is saved in Settings.
 
 ## SAMPLEON learns about each project
 
@@ -36,7 +42,7 @@ projects, so it knows the project before the first audience request arrives.
 - 2xx is delivered. A 4xx other than 408 and 429 is refused for good (`FAILED`). Anything else,
   including SAMPLEON being down, is retried with the shared backoff (30 s doubling, capped at
   1 hour) up to 12 times, then `DEAD_LETTER`. Each retry sends the same event id.
-- Nothing is queued while `SAMPLEON_URL` and `SAMPLEON_CLIENT_SECRET` are not set.
+- Nothing is queued while the SampAudience connection is not set up.
 - `GET /api/v1/projects/{id}/sampleon` includes `announced` (the latest event's state, attempts,
   last error and delivery time), and the project's SampAudience tab shows it. For a project made
   before the connection, `POST /api/v1/projects/{id}/sampleon/announce` (admins and project
