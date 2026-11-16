@@ -3,6 +3,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { EventSource, Prisma, RespondentStatus } from '@prisma/client';
 import { config as appConfig } from '../common/config';
 import { hmacSha256, randomToken, safeEqualHex, sha256 } from '../common/crypto';
+import { deviceLimitsOn, effectiveSecurity } from './vendor-security';
 import { WebhooksService } from '../webhooks/webhooks.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { claimClientLink, peekClientLink } from '../client-links/client-links';
@@ -15,6 +16,7 @@ import {
   CheckResult,
   checkDevice,
   deviceOs,
+  deviceType,
   checkEntrySignature,
   checkGeo,
   checkLanguage,
@@ -44,6 +46,11 @@ function withFraudChecks(security: Record<string, boolean>, on: boolean): Record
   const out = { ...security };
   for (const k of FRAUD_CHECK_KEYS) out[k] = false;
   return out;
+}
+
+/** Project security with this respondent's vendor overrides applied (survey/vendor-security.ts). */
+function sessionSecurity(session: { project: { security: unknown }; vendorAllocation: { securityOverrides: unknown; vendor: { securityOverrides: unknown } } }): Record<string, boolean> {
+  return effectiveSecurity(session.project.security, session.vendorAllocation.vendor.securityOverrides, session.vendorAllocation.securityOverrides);
 }
 
 /** "[UID]" or an unfilled macro such as "{TID}": the vendor did not put its respondent ID in the link. */
@@ -259,7 +266,7 @@ export class SurveyService {
 
     const ipHash = req.ip ? sha256(`${project.organizationId}:${req.ip}`) : null;
     const fraudOn = await this.fraudChecksOn(project.organizationId);
-    const security = withFraudChecks((project.security ?? {}) as Record<string, boolean>, fraudOn);
+    const security = withFraudChecks(effectiveSecurity(project.security, allocation.vendor.securityOverrides, allocation.securityOverrides), fraudOn);
     const checks: CheckResult[] = [];
 
     // URL protection runs before anything is stored: an unsigned link must not be able to claim
@@ -300,7 +307,10 @@ export class SurveyService {
       if (reached) initial = { status: 'QUOTA_FULL', detail: reached === 'clicksPerMonth' ? 'PLAN_CLICK_LIMIT' : 'PLAN_COMPLETE_LIMIT' };
     }
     // Server-side checks. Test links run them too, but only log the result.
-    const device = checkDevice(project.devices as Record<string, boolean>, req.userAgent);
+    // A vendor (or this project's setting for it) can switch device and system limits off.
+    const device = deviceLimitsOn(allocation.vendor.securityOverrides, allocation.securityOverrides)
+      ? checkDevice(project.devices as Record<string, boolean>, req.userAgent)
+      : { check: 'device', ok: true, note: deviceType(req.userAgent) };
     checks.push(device);
     if (security.torDetection) {
       const exit = await this.tor.isExitNode(req.ip);
@@ -558,7 +568,7 @@ export class SurveyService {
     if (!session) return { location: internalEndPage(appConfig.publicBaseUrl, 'SECURITY_REJECT') };
     if (session.status !== 'STARTED') return { location: await this.redirectFor(session, session.status as OutcomeStatus) };
     if (!session.gateRequired || session.gatePassedAt) return { location: await this.surveyLink(session) };
-    const security = (session.project.security ?? {}) as Record<string, boolean>;
+    const security = sessionSecurity(session);
     const consent = await consentFor(this.prisma, session.organizationId, session.projectCountry.countryCode);
     return {
       view: {
@@ -577,7 +587,7 @@ export class SurveyService {
   }
 
   private humanView(session: SessionWithContext): GateView['human'] {
-    const security = (session.project.security ?? {}) as Record<string, boolean>;
+    const security = sessionSecurity(session);
     const style = captchaStyleOf(session);
     if (!humanRequired(security, style) || session.humanPassedAt) return null;
     const c = humanChallenge(style, appConfig.jwtSecret, session.token, session.humanAttempts);
@@ -610,7 +620,7 @@ export class SurveyService {
     if (!session) return { location: internalEndPage(appConfig.publicBaseUrl, 'SECURITY_REJECT') };
     if (session.status !== 'STARTED') return { location: await this.redirectFor(session, session.status as OutcomeStatus) };
     const style = captchaStyleOf(session);
-    if (session.humanPassedAt || !humanRequired((session.project.security ?? {}) as Record<string, boolean>, style)) return { ok: true };
+    if (session.humanPassedAt || !humanRequired(sessionSecurity(session), style)) return { ok: true };
     const attempt = session.humanAttempts;
     if (attempt >= HUMAN_MAX_ATTEMPTS) return this.fail(session, 'SECURITY_REJECT', 'HUMAN_CHECK_FAILED');
 
@@ -655,7 +665,7 @@ export class SurveyService {
     if (session.expiresAt < new Date()) return this.fail(session, 'SECURITY_REJECT', 'EXPIRED');
 
     const fraudOn = await this.fraudChecksOn(session.organizationId);
-    const security = withFraudChecks((session.project.security ?? {}) as Record<string, boolean>, fraudOn);
+    const security = withFraudChecks(sessionSecurity(session), fraudOn);
     const orgId = session.organizationId;
     const fingerprint = typeof body.fingerprint === 'string' && HASH_RE.test(body.fingerprint) ? sha256(`${orgId}:${body.fingerprint.toLowerCase()}`) : null;
     const deviceHash = typeof body.device === 'string' && HASH_RE.test(body.device) ? sha256(`${orgId}:device:${body.device.toLowerCase()}`) : null;

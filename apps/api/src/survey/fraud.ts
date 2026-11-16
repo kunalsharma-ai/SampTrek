@@ -133,7 +133,7 @@ export const RISK_WEIGHTS: Record<string, number> = {
   BAD_SIGNATURE: 60,
 };
 /** Screen-outs, quotas and consent are not fraud. */
-const NOT_RISK = new Set(['GATE_SCREENOUT', 'PRESCREEN', 'GATE_INCOMPLETE', 'CONSENT_DECLINED', 'CELL_FULL', 'DEVICE_NOT_ALLOWED', 'MOBILE_OS_NOT_ALLOWED', 'EXPIRED', 'HIGH_RISK']);
+const NOT_RISK = new Set(['GATE_SCREENOUT', 'PRESCREEN', 'GATE_INCOMPLETE', 'CONSENT_DECLINED', 'CELL_FULL', 'DEVICE_NOT_ALLOWED', 'MOBILE_OS_NOT_ALLOWED', 'OS_NOT_ALLOWED', 'EXPIRED', 'HIGH_RISK']);
 
 /** 0-100 from every check that ran, plus the signals behind it (reason codes and soft flags). */
 export function riskOf(checks: CheckResult[]): { score: number; signals: string[] } {

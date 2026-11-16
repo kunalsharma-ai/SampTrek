@@ -1,3 +1,4 @@
+import { cleanOverrides, effectiveSecurity, type SecurityOverrides } from '../survey/vendor-security';
 import { EntitlementsService } from '../super-admin/entitlements';
 import { BadRequestException, Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
@@ -359,7 +360,7 @@ export class ProjectsService {
           orderBy: [{ countryCode: 'asc' }, { createdAt: 'asc' }],
           include: {
             quotas: true,
-            allocations: { include: { vendor: { select: { id: true, name: true, code: true, status: true, contactName: true, contactEmail: true, ...LOGO_SELECT } } }, orderBy: { createdAt: 'asc' } },
+            allocations: { include: { vendor: { select: { id: true, name: true, code: true, status: true, contactName: true, contactEmail: true, securityOverrides: true, ...LOGO_SELECT } } }, orderBy: { createdAt: 'asc' } },
           },
         },
       },
@@ -379,7 +380,8 @@ export class ProjectsService {
     }
     const [projectMetrics, marketMetrics] = await Promise.all([fieldMetrics(this.prisma, [p.id]), fieldMetrics(this.prisma, [p.id], 'country')]);
     const base = config.publicBaseUrl;
-    const signed = !!(p.security as Record<string, boolean> | null)?.urlProtection;
+    // URL protection can differ per vendor (survey/vendor-security.ts).
+    const signedFor = (a: { securityOverrides: unknown; vendor: { securityOverrides: unknown } }) => !!effectiveSecurity(p.security, a.vendor.securityOverrides, a.securityOverrides).urlProtection;
     const money = await this.prisma.respondentSession.groupBy({
       by: ['projectCountryId'],
       where: { projectId: p.id, isTest: false, status: 'COMPLETE' },
@@ -406,8 +408,8 @@ export class ProjectsService {
           ...a,
           vendor: withLogoUrl('vendor', a.vendor),
           // With URL protection on, vendors append sig = hex HMAC-SHA256(their signing secret, UID).
-          entryLink: `${base}/s/${a.entryCode}?${encodeURIComponent(a.uidParam)}=[UID]${signed ? '&sig=[SIG]' : ''}`,
-          testEntryLink: `${base}/s/${a.testEntryCode}?${encodeURIComponent(a.uidParam)}=[UID]${signed ? '&sig=[SIG]' : ''}`,
+          entryLink: `${base}/s/${a.entryCode}?${encodeURIComponent(a.uidParam)}=[UID]${signedFor(a) ? '&sig=[SIG]' : ''}`,
+          testEntryLink: `${base}/s/${a.testEntryCode}?${encodeURIComponent(a.uidParam)}=[UID]${signedFor(a) ? '&sig=[SIG]' : ''}`,
           stats: allocStats.get(a.id) ?? emptyStats(),
         })),
       })),
@@ -781,6 +783,16 @@ export class ProjectsService {
     });
     await this.audit.record({ organizationId: u.organizationId, actorId: u.id, action: 'allocation.update', entityType: 'VendorAllocation', entityId: allocationId, detail: body });
     return a;
+  }
+
+  /** Sets the vendor's security overrides on every one of its markets in this project. */
+  async setVendorSecurity(u: AuthUser, projectId: string, vendorId: string, overrides: SecurityOverrides) {
+    await this.mustOwn(u, projectId);
+    const value = cleanOverrides(overrides);
+    const r = await this.prisma.vendorAllocation.updateMany({ where: { vendorId, projectCountry: { projectId } }, data: { securityOverrides: value ?? null } });
+    if (!r.count) throw new NotFoundException('This vendor is not on the project');
+    await this.audit.record({ organizationId: u.organizationId, actorId: u.id, action: 'allocation.security', entityType: 'Project', entityId: projectId, detail: { vendorId, overrides: value } });
+    return { vendorId, markets: r.count, overrides: value ?? {} };
   }
 
   async sessions(u: AuthUser, projectId: string, opts: { includeTest: boolean; take: number }) {

@@ -837,15 +837,21 @@ export const HELP: Record<string, HelpEntry> = {
   },
   'device.allowed': {
     title: 'Devices allowed',
-    what: 'Which devices may take this survey: desktop, mobile and tablet, and for mobile, Android and/or iPhone.',
-    how: 'Switch a device off to stop it. Under Mobile, untick Android or iOS to allow only one kind of phone.',
+    what: 'Which devices may take this survey (desktop, mobile, tablet) and which operating systems on each: Windows, Mac and Linux on desktops, Android, iOS and other on phones and tablets.',
+    how: 'Untick a device to stop it. Untick a system under a device to stop only that system on that device.',
     where: 'Every market and vendor of this project. Blocked devices get the Terminate page.',
   },
+  'vendor.security': {
+    title: 'Security per vendor',
+    what: 'Security switches that differ for one vendor: for example duplicate detection, captcha, the gate survey or device limits off (or on) for that vendor only.',
+    how: 'Leave a switch on "Same as" to follow the project. Pick On or Off to override it. On the vendor page it applies in every project; on Vendors & links → Security it applies in that project only, and wins.',
+    where: "This vendor's respondents only. Order: the project's setting for the vendor, then the vendor page, then the project.",
+  },
   'device.mobileOs': {
-    title: 'Android and iOS',
-    what: 'Which phone systems are let in when Mobile is allowed.',
-    how: 'Keep both ticked for all phones. Untick one to allow only Android phones or only iPhones. At least one must stay ticked.',
-    where: 'Phones only, for every market of this project. Other phone systems get in only when both are ticked.',
+    title: 'Operating systems',
+    what: 'Which systems are let in on each allowed device: Windows / Mac / Linux / other on desktops, Android / iOS / other on phones and on tablets.',
+    how: 'Keep all ticked to allow every system. Untick one to block it on that device only. Each allowed device needs at least one system.',
+    where: 'Every market of this project. Blocked respondents get the Terminate page. ChromeOS counts as desktop Other, and iPads on iPadOS 13+ count as Mac.',
   },
   'quota.device': {
     title: 'Device quota',

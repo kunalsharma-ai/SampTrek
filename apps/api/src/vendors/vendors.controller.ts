@@ -14,6 +14,7 @@ import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { LOGO_SELECT, withLogoUrl } from '../parties/logos';
 import { isKnownMacro, macrosIn } from '../redirects/redirect-resolver';
+import { cleanOverrides, securityOverridesSchema } from '../survey/vendor-security';
 import { OUTCOME_STATUSES, parseVendorRedirectUrls, VendorRedirectUrls } from '../redirects/redirect.types';
 
 const domain = z.string().regex(/^(\*\.)?[a-z0-9.-]+\.[a-z]{2,}$|^localhost$/i, 'Use a hostname like example.com or *.example.com');
@@ -62,6 +63,8 @@ const fields = {
   redirectAllowedDomains: z.array(domain).max(100).default([]),
   callbackUrlTemplate: optional(callbackUrl),
   redirectUrls: redirectUrlsSchema.optional(),
+  /** Security switches that differ for this vendor in every project (survey/vendor-security.ts). */
+  securityOverrides: securityOverridesSchema.nullable().optional(),
 };
 const createSchema = z.object({ ...fields, code: codeField });
 const updateSchema = z.object({
@@ -91,7 +94,7 @@ const importSchema = z.object({ rows: z.array(z.record(z.string(), z.unknown()))
 
 const PUBLIC_FIELDS = {
   id: true, name: true, code: true, status: true, website: true, contactName: true, contactEmail: true, contactPhone: true,
-  redirectAllowedDomains: true, callbackUrlTemplate: true, redirectUrls: true, createdAt: true, ...LOGO_SELECT,
+  redirectAllowedDomains: true, callbackUrlTemplate: true, redirectUrls: true, securityOverrides: true, createdAt: true, ...LOGO_SELECT,
 } as const;
 
 function cleanUrls(raw: Record<string, string | null | undefined> | undefined): VendorRedirectUrls {
@@ -154,6 +157,7 @@ export class VendorsController {
       data: {
         organizationId: u.organizationId,
         ...body,
+        securityOverrides: cleanOverrides(body.securityOverrides) ?? null,
         redirectUrls: Object.keys(urls).length ? urls : null,
         redirectAllowedDomains: withRedirectHosts(body.redirectAllowedDomains, urls),
         callbackSecret: randomToken(32),
@@ -226,12 +230,13 @@ export class VendorsController {
     const found = await this.prisma.vendor.findFirst({ where: { id, organizationId: u.organizationId } });
     if (!found) throw new NotFoundException();
     if (body.code && body.code !== found.code) await this.assertCodeFree(u.organizationId, body.code);
-    const { redirectUrls, redirectAllowedDomains, ...rest } = body;
+    const { redirectUrls, redirectAllowedDomains, securityOverrides, ...rest } = body;
     const urls = redirectUrls !== undefined ? cleanUrls(redirectUrls) : parseVendorRedirectUrls(found.redirectUrls);
     await this.prisma.vendor.update({
       where: { id },
       data: {
         ...rest,
+        ...(securityOverrides !== undefined ? { securityOverrides: cleanOverrides(securityOverrides) ?? null } : {}),
         ...(redirectUrls !== undefined ? { redirectUrls: Object.keys(urls).length ? urls : null } : {}),
         ...(redirectAllowedDomains !== undefined || redirectUrls !== undefined
           ? { redirectAllowedDomains: withRedirectHosts(redirectAllowedDomains ?? found.redirectAllowedDomains, urls) }
