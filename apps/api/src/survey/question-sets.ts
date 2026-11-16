@@ -8,7 +8,7 @@ import { questionTemplates } from './questions';
  * its version is offered from then on; "Reset" brings back the version below.
  */
 
-export const AUDIENCES = ['b2b', 'b2c', 'parents', 'teens', 'hc_consumer', 'hc_patient', 'hc_caregiver'] as const;
+export const AUDIENCES = ['b2b', 'b2c', 'decision_makers', 'tobacco', 'parents', 'teens', 'hc_consumer', 'hc_patient', 'hc_caregiver', 'hcp'] as const;
 export type Audience = (typeof AUDIENCES)[number];
 
 export interface QuestionSet {
@@ -16,6 +16,8 @@ export interface QuestionSet {
   name: string;
   description: string;
   questions: Question[];
+  /** Project categories that start with this set as their gate survey (Admin → Survey library). */
+  categories: string[];
 }
 
 type Opt = { id: string; label: string; action: 'accept' | 'qualify' | 'terminate'; exclusive?: boolean };
@@ -44,7 +46,7 @@ const CONDITIONS = [
   o('other', 'Another long-term condition'),
 ];
 
-function sets(currency: string): QuestionSet[] {
+function sets(currency: string): Omit<QuestionSet, 'categories'>[] {
   const library = Object.fromEntries(questionTemplates(currency).map((t) => [t.question.id, t.question]));
   const { income, employment, education, postal } = library as Record<string, Question>;
   return [
@@ -103,6 +105,71 @@ function sets(currency: string): QuestionSet[] {
         income,
         employment,
         education,
+      ],
+    },
+    {
+      key: 'decision_makers',
+      name: 'Decision makers (IT, HR, finance and more)',
+      description: 'Senior professionals who sign off purchases: seniority, function, budget they control, company size and products they decide on.',
+      questions: [
+        q({
+          id: 'employment',
+          type: 'single',
+          text: 'Which best describes your current employment?',
+          options: [o('full_time', 'Employed full-time', 'qualify'), o('part_time', 'Employed part-time', 'qualify'), o('self_employed', 'Self-employed or business owner', 'qualify'), o('not_working', 'Not working', 'terminate'), o('student', 'Student', 'terminate'), o('retired', 'Retired', 'terminate')],
+        }),
+        q({
+          id: 'seniority',
+          type: 'single',
+          text: 'Which best describes your position?',
+          options: [o('c_level', 'Owner, partner or C-level (CEO, CFO, CIO and so on)', 'qualify'), o('vp', 'Vice president or head of department', 'qualify'), o('director', 'Director', 'qualify'), o('manager', 'Manager', 'qualify'), o('staff', 'Staff or specialist without reports', 'terminate'), o('other', 'Other', 'terminate')],
+        }),
+        q({
+          id: 'function',
+          type: 'dropdown',
+          text: 'Which area are you responsible for?',
+          options: [o('it', 'IT or technology'), o('finance', 'Finance'), o('hr', 'Human resources'), o('marketing', 'Marketing'), o('sales', 'Sales'), o('operations', 'Operations'), o('procurement', 'Procurement'), o('general', 'General management'), o('other', 'Other')],
+        }),
+        q({
+          id: 'decision_areas',
+          type: 'multi',
+          text: 'For which of these do you make or approve purchase decisions? Choose all that apply.',
+          help: 'Mark the area your study is about as "qualify".',
+          options: [o('software', 'Software or cloud services'), o('hardware', 'Computers, devices or IT hardware'), o('telecom', 'Telecoms or connectivity'), o('hr_services', 'HR, payroll or benefits'), o('finance_services', 'Banking, insurance or financial services'), o('marketing_services', 'Marketing or advertising services'), o('office', 'Office supplies or facilities'), o('vehicles', 'Company vehicles or travel'), o('none', 'None of these', 'terminate', true)],
+          validation: { minSelect: 1 },
+        }),
+        q({
+          id: 'budget',
+          type: 'single',
+          text: 'About how much budget do you control or influence each year?',
+          options: [o('lt10k', 'Less than 10,000'), o('10_100k', '10,000 to 99,999'), o('100k_1m', '100,000 to 999,999'), o('1m', '1 million or more'), o('dk', "I don't know")],
+        }),
+        q({
+          id: 'company_size',
+          type: 'single',
+          text: 'How many people work at your organisation, across all locations?',
+          options: [o('1_9', '1 to 9'), o('10_49', '10 to 49'), o('50_249', '50 to 249'), o('250_999', '250 to 999'), o('1000', '1,000 or more'), o('dk', "I don't know")],
+        }),
+      ],
+    },
+    {
+      key: 'tobacco',
+      name: 'Tobacco and nicotine users',
+      description: 'Adult smokers and nicotine users: products used, how often, brand and whether they are trying to quit.',
+      questions: [
+        q({ ...age(18), help: 'Set the minimum to the legal age for tobacco in the target country (for example 21 in the US).' }),
+        gender,
+        q({
+          id: 'nicotine_products',
+          type: 'multi',
+          text: 'Which of these have you used in the past 30 days? Choose all that apply.',
+          options: [o('cigarettes', 'Cigarettes', 'qualify'), o('roll', 'Roll-your-own tobacco', 'qualify'), o('cigars', 'Cigars or cigarillos', 'qualify'), o('vape', 'E-cigarettes or vapes', 'qualify'), o('heated', 'Heated tobacco (for example IQOS)', 'qualify'), o('pouches', 'Nicotine pouches or snus', 'qualify'), o('hookah', 'Hookah or shisha', 'qualify'), o('none', 'None of these', 'terminate', true)],
+          validation: { minSelect: 1 },
+        }),
+        q({ id: 'frequency', type: 'single', text: 'How often do you use tobacco or nicotine products?', options: [o('daily', 'Every day'), o('weekly', 'Some days each week'), o('monthly', 'A few times a month'), o('rarely', 'Less often')] }),
+        q({ id: 'per_day', type: 'number', text: 'On a day you smoke or vape, about how many cigarettes or sessions do you have?', required: false, validation: { min: 0, max: 100, integer: true } }),
+        q({ id: 'brand', type: 'text', text: 'Which brand do you use most often?', required: false, validation: { maxLength: 60 } }),
+        q({ id: 'quit', type: 'single', text: 'Are you thinking about quitting?', options: [o('30d', 'Yes, in the next 30 days'), o('6m', 'Yes, in the next 6 months'), o('someday', 'Someday, but not soon'), o('no', 'No')] }),
       ],
     },
     {
@@ -253,10 +320,48 @@ function sets(currency: string): QuestionSet[] {
         q({ id: 'live_together', type: 'single', text: 'Does the person you care for live with you?', options: [o('yes', 'Yes'), o('no', 'No')] }),
       ],
     },
+    {
+      key: 'hcp',
+      name: 'Healthcare professionals (HCP)',
+      description: 'Doctors, nurses and pharmacists: profession, specialty, years in practice, work setting and patients seen.',
+      questions: [
+        q({
+          id: 'profession',
+          type: 'single',
+          text: 'Which best describes your profession?',
+          options: [o('physician', 'Physician or doctor', 'qualify'), o('surgeon', 'Surgeon', 'qualify'), o('nurse', 'Nurse or nurse practitioner', 'qualify'), o('pharmacist', 'Pharmacist', 'qualify'), o('dentist', 'Dentist', 'qualify'), o('allied', 'Allied health professional (physiotherapist, dietitian and so on)', 'qualify'), o('none', 'I do not work in healthcare', 'terminate')],
+        }),
+        q({
+          id: 'specialty',
+          type: 'dropdown',
+          text: 'What is your main specialty?',
+          help: 'Mark the specialties your study needs as "qualify".',
+          options: [o('gp', 'General practice or family medicine'), o('internal', 'Internal medicine'), o('cardiology', 'Cardiology'), o('oncology', 'Oncology'), o('endocrinology', 'Endocrinology or diabetes'), o('neurology', 'Neurology'), o('psychiatry', 'Psychiatry'), o('pulmonology', 'Pulmonology'), o('dermatology', 'Dermatology'), o('pediatrics', 'Paediatrics'), o('gynecology', 'Obstetrics or gynaecology'), o('rheumatology', 'Rheumatology'), o('other', 'Other')],
+        }),
+        q({ id: 'years_practice', type: 'number', text: 'For how many years have you been in practice since finishing your training?', validation: { min: 0, max: 60, integer: true }, qualify: { min: 2, max: 35 } }),
+        q({
+          id: 'setting',
+          type: 'single',
+          text: 'Where do you spend most of your working time?',
+          options: [o('private', 'Private practice or clinic'), o('hospital', 'Hospital'), o('academic', 'University or teaching hospital'), o('pharmacy', 'Pharmacy'), o('other', 'Other')],
+        }),
+        q({ id: 'patients_month', type: 'number', text: 'About how many patients do you personally see in a typical month?', validation: { min: 0, max: 10000, integer: true } }),
+        q({ id: 'direct_care', type: 'single', text: 'What share of your time do you spend on direct patient care?', options: [o('gt70', 'More than 70%', 'qualify'), o('50_70', '50% to 70%', 'qualify'), o('lt50', 'Less than 50%', 'terminate')] }),
+      ],
+    },
   ];
 }
 
+/** Categories each built-in set starts with; an organisation can change them on the Survey library page. */
+export const DEFAULT_SET_CATEGORIES: Record<string, string[]> = {
+  b2b: ['B2B'],
+  b2c: ['B2C', 'Consumer', 'B2C-B2B'],
+  parents: ['Teens-And-Parents'],
+  hc_consumer: ['Healthcare-Consumer'],
+  hcp: ['Healthcare-Professional'],
+};
+
 /** The built-in sets, with income bands in the project's currency. */
 export function builtInQuestionSets(currency = 'USD'): QuestionSet[] {
-  return sets(currency);
+  return sets(currency).map((x) => ({ ...x, categories: DEFAULT_SET_CATEGORIES[x.key] ?? [] }));
 }

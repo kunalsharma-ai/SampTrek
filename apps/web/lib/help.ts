@@ -527,7 +527,9 @@ export const HELP: Record<string, HelpEntry> = {
   'project.dashboardLinks.vendors': { title: 'Show vendor names', what: 'Adds each vendor\'s name with its completes and target to the page.', how: 'Switch it on only when the client may know your sample sources. Vendor CPI is never shown.', where: 'This link only. You can change it later; the client sees it on the next refresh.' },
   'project.dashboardLinks.list': { title: 'Working links', what: 'Every link that works now, with how often and when it was last opened.', how: 'Copy or open a link, change what it shows, or press Turn off to stop it at once.', where: 'Turned-off and ended links are kept below for the record and cannot be switched back on.' },
   'settings.numbering': { title: 'Work orders and UID prefix', what: 'How work order numbers are made, and the prefix on respondent IDs sent to client surveys.', how: 'Set the prefix and the next number; check the last one given. Add a UID prefix for your brand.', where: 'Every new project and new respondents. Admins can change it.' },
-  'page:/settings/options': { title: 'Dropdown options', what: 'Every option your team added with “Add +”: categories, target groups, languages and link variables.', how: 'Add an option, fix a typo, or remove one you no longer use.', where: 'The dropdowns across SampTrek. Projects keep the values they already use.' },
+  'page:/settings/surveys': { title: 'Survey library', what: 'Gate surveys per audience (consumers, tobacco users, B2B, decision makers, healthcare and more), each with basic demographics plus its own questions.', how: 'Pick a set, add or edit questions, tick the project categories it is for, and save. New set makes your own.', where: 'New projects in a ticked category start with that set as their gate survey.' },
+  'page:/help': { title: 'Help', what: 'Screenshots of the main pages with numbered arrows, steps and common questions.', how: 'Pick a topic or search. The numbers on each picture match the steps beside it.', where: 'All of SampTrek.' },
+  'page:/settings/options': { title: 'Dropdown options', what: 'Every option your team added with “Add +”: categories, languages and link variables (and old target groups, which you can remove).', how: 'Add an option, fix a typo, or remove one you no longer use.', where: 'The dropdowns across SampTrek. Projects keep the values they already use.' },
   'project.uniqueLinks.generate': {
     title: 'Generate vendor unique links',
     what: 'Makes a batch of single-use links for one vendor in one market.',
@@ -840,6 +842,12 @@ export const HELP: Record<string, HelpEntry> = {
     what: 'Which devices may take this survey (desktop, mobile, tablet) and which operating systems on each: Windows, Mac and Linux on desktops, Android, iOS and other on phones and tablets.',
     how: 'Untick a device to stop it. Untick a system under a device to stop only that system on that device.',
     where: 'Every market and vendor of this project. Blocked devices get the Terminate page.',
+  },
+  'settings.surveys': {
+    title: 'Survey library',
+    what: 'Ready gate surveys per audience: consumers, tobacco users, B2B, decision makers, parents, teens, healthcare consumers, patients, caregivers and healthcare professionals. Each has basic demographics plus questions for that audience.',
+    how: 'Pick a set on the left. Add questions with Add question (your own), Library (single demographic questions) or Audience sets (copy from another set), click a question to edit it, tick the project categories it is for, then Save. New set makes your own.',
+    where: 'New projects in a ticked category start with this set as their gate survey. Projects already created keep their questions.',
   },
   'vendor.security': {
     title: 'Security per vendor',

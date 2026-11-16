@@ -1,6 +1,6 @@
 'use client';
 import clsx from 'clsx';
-import { AlertTriangle, ClipboardPaste, FileStack, LayoutTemplate, Plus, Search, Sparkles, Trash2, Trophy, Users } from 'lucide-react';
+import { AlertTriangle, ClipboardPaste, Download, Upload, FileStack, LayoutTemplate, Plus, Search, Sparkles, Trash2, Trophy, Users } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
@@ -9,10 +9,14 @@ import { Combobox, CountrySelect, CurrencySelect } from '@/components/form/combo
 import { AddableSelect, loadCustomOptions } from '@/components/form/option-select';
 import { BulkFill } from '@/components/project/bulk-fill';
 import { cleanQuestion, QuestionBuilder, questionProblems } from '@/components/project/question-builder';
+import type { QuestionSetInfo } from '@/components/project/question-sets';
 import { BriefBanner, BriefReader, useBriefAvailability, type BriefInfo } from '@/components/project/brief-reader';
 import { DevicePicker, devicesProblem, withOs, type DeviceSettings } from '@/components/project/mobile-os';
 import { ErrorBox, Field, Loading, PageHeader, Section, Toggle } from '@/components/ui';
 import { api, get, post } from '@/lib/api';
+import { parseCsv } from '@/lib/csv';
+import { MARKET_TEMPLATE_EXAMPLES, MARKET_TEMPLATE_HEADER, parseMarketSheet, splitPasted } from '@/lib/market-import';
+import { downloadXlsx, isXlsx, readXlsx } from '@/lib/xlsx';
 import { surveyLinkProblem } from '@/lib/survey-link';
 import { describeTemplate, type ProjectTemplate, type TemplateForm } from '@/lib/templates';
 import { COUNTRIES, countryName, flag } from '@/lib/countries';
@@ -103,9 +107,17 @@ function CreateProjectPage() {
   const [vendors, setVendors] = useState<VendorRow[]>([]);
   const [rememberVendors, setRememberVendors] = useState(false);
   const [gateQuestions, setGateQuestions] = useState<Question[]>([]);
+  /** The Survey library set filled in for the chosen category, while nobody has changed its questions. */
+  const [autoSet, setAutoSet] = useState<{ name: string; json: string } | null>(null);
+  const gateRef = useRef(gateQuestions);
+  gateRef.current = gateQuestions;
+  const autoRef = useRef(autoSet);
+  autoRef.current = autoSet;
   const [selected, setSelected] = useState<number[]>([]);
   const [filter, setFilter] = useState('');
   const [paste, setPaste] = useState<string | null>(null);
+  const [importNote, setImportNote] = useState<string | null>(null);
+  const marketFile = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
   const [templates, setTemplates] = useState<ProjectTemplate[]>([]);
@@ -239,6 +251,29 @@ function CreateProjectPage() {
   }
 
   // Save the form as a draft a moment after each change, once it has a name or a market.
+  // Admin → Survey library: a category's set becomes the gate survey, unless someone already chose questions.
+  useEffect(() => {
+    if (!info.category) return;
+    let live = true;
+    get<QuestionSetInfo[]>(`/question-templates/sets?currency=${currency}`).then((sets) => {
+      if (!live) return;
+      const set = [...sets].reverse().find((x) => (x.categories ?? []).includes(info.category));
+      const cur = gateRef.current;
+      const auto = autoRef.current;
+      if (cur.length && !(auto && JSON.stringify(cur) === auto.json)) return;
+      if (!set) {
+        if (auto) { setGateQuestions([]); setAutoSet(null); }
+        return;
+      }
+      const next = structuredClone(set.questions);
+      setGateQuestions(next);
+      setAutoSet({ name: set.name, json: JSON.stringify(next) });
+      setSecurity((sec) => ({ ...sec, gateSurvey: true }));
+    }).catch(() => undefined);
+    return () => { live = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [info.category, currency]);
+
   const draftData: DraftData = { info, devices, security, mode, shared, rows, templateId: template?.id ?? null, wonBidId: wonBid?.status === 'NEW' ? wonBid.id : null, brief, currency, vendors, gateQuestions };
   const draftJson = JSON.stringify(draftData);
   useEffect(() => {
@@ -337,24 +372,31 @@ function CreateProjectPage() {
     setRows((rs) => rs.map((r, n) => (idx.includes(n) ? { ...r, ...patch } : r)));
   }
 
-  function applyPaste() {
-    // Columns: Country (code or name), Language, LOI, IR, CPI, Completes, Target group (tab or comma separated, header optional)
-    const parsed: CountryRow[] = [];
-    for (const line of (paste ?? '').split(/\r?\n/)) {
-      const cols = line.split(/\t|,/).map((s) => s.trim());
-      const c = cols[0] ? COUNTRIES.find((x) => x.code === cols[0].toUpperCase() || x.name.toLowerCase() === cols[0].toLowerCase()) : undefined;
-      if (!c) continue;
-      const r = blankRow(c.code);
-      if (cols[1]) r.language = cols[1];
-      if (cols[2]) r.loiMinutes = num(cols[2]);
-      if (cols[3]) r.irPercent = num(cols[3].replace('%', ''));
-      if (cols[4]) r.cpi = num(cols[4]);
-      if (cols[5]) r.targetCompletes = num(cols[5]);
-      if (cols[6]) r.targetGroup = cols[6];
-      parsed.push(r);
-    }
+  function addImported(text: string | string[][], from: string) {
+    const { rows: found, skipped } = parseMarketSheet(typeof text === 'string' ? splitPasted(text) : text, COUNTRIES);
+    const parsed = found.map((x) => {
+      const r = blankRow(x.code);
+      if (x.language) r.language = x.language;
+      if (x.loiMinutes !== undefined) r.loiMinutes = x.loiMinutes;
+      if (x.irPercent !== undefined) r.irPercent = x.irPercent;
+      if (x.cpi !== undefined) r.cpi = x.cpi;
+      if (x.targetCompletes !== undefined) r.targetCompletes = x.targetCompletes;
+      if (x.targetGroup) r.targetGroup = x.targetGroup;
+      return r;
+    });
     setRows((rs) => [...rs, ...parsed]);
+    setImportNote(`Added ${parsed.length} ${parsed.length === 1 ? 'market' : 'markets'} from ${from}.${skipped ? ` Skipped ${skipped} ${skipped === 1 ? 'row' : 'rows'} with an unknown country.` : ''}`);
     setPaste(null);
+  }
+
+  async function uploadMarkets(file: File) {
+    setImportNote(null);
+    try {
+      const rows = isXlsx(file) ? await readXlsx(await file.arrayBuffer()) : parseCsv(await file.text());
+      addImported(rows, file.name);
+    } catch {
+      setImportNote(`Could not read ${file.name}. Use the template (.xlsx) or a CSV file.`);
+    }
   }
 
   async function submit() {
@@ -591,7 +633,14 @@ function CreateProjectPage() {
           <Section
             help="create.markets"
             title={`Target markets${rows.length ? ` · ${rows.length} ${rows.length === 1 ? 'market' : 'markets'} · ${totalCompletes.toLocaleString()} completes` : ''}`}
-            actions={<button className="btn-ghost px-2.5 py-1.5 text-xs" onClick={() => setPaste('')}><ClipboardPaste className="h-3.5 w-3.5" /> Paste from Excel</button>}
+            actions={
+              <div className="flex flex-wrap gap-1">
+                <button className="btn-ghost px-2.5 py-1.5 text-xs" onClick={() => downloadXlsx('target-markets-template.xlsx', [MARKET_TEMPLATE_HEADER, ...MARKET_TEMPLATE_EXAMPLES], 'Markets')}><Download className="h-3.5 w-3.5" /> Template</button>
+                <button className="btn-ghost px-2.5 py-1.5 text-xs" onClick={() => marketFile.current?.click()}><Upload className="h-3.5 w-3.5" /> Upload Excel</button>
+                <button className="btn-ghost px-2.5 py-1.5 text-xs" onClick={() => setPaste('')}><ClipboardPaste className="h-3.5 w-3.5" /> Paste</button>
+                <input ref={marketFile} type="file" className="hidden" aria-label="Upload target markets" accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void uploadMarkets(f); }} />
+              </div>
+            }
           >
             <div className="mb-4 flex flex-wrap items-center gap-2">
               <div className="w-full sm:w-80">
@@ -600,12 +649,13 @@ function CreateProjectPage() {
               <span className="text-xs text-muted">Add the same country again for another target group.</span>
             </div>
 
+            {importNote && <p className="mb-3 rounded-lg border border-line bg-surface-2 px-3 py-2 text-sm" role="status">{importNote}</p>}
             {paste !== null && (
               <div className="mb-4 rounded-lg border border-line p-4">
                 <Field label="Paste rows: Country, Language, LOI, IR, CPI, Completes, Target group" hint="Copied Excel cells (tabs) or CSV both work. Country can be a code (JP) or a name (Japan). Empty cells use the basics above.">
                   <textarea className="input min-h-[110px] font-mono text-xs" value={paste} onChange={(e) => setPaste(e.target.value)} placeholder={'JP\tja\t15\t30\t12.50\t500\tGen Z\nJapan\tja\t15\t25\t11\t300\tParents'} />
                 </Field>
-                <div className="mt-3 flex gap-2"><button className="btn-primary" onClick={applyPaste}>Add rows</button><button className="btn-ghost" onClick={() => setPaste(null)}>Cancel</button></div>
+                <div className="mt-3 flex gap-2"><button className="btn-primary" onClick={() => addImported(paste ?? '', 'the pasted cells')}>Add rows</button><button className="btn-ghost" onClick={() => setPaste(null)}>Cancel</button></div>
               </div>
             )}
 
@@ -740,7 +790,12 @@ function CreateProjectPage() {
                 <button className="btn-ghost px-2.5 py-1.5 text-xs" onClick={() => setSecurity({ ...security, gateSurvey: true })}>Turn it on</button>
               </div>
             ) : (
-              <QuestionBuilder value={gateQuestions} onChange={setGateQuestions} editable templatesCurrency={currency} emptyText="No gate questions yet. Pick an audience set (B2B, B2C, parents, teens, healthcare consumers, patients or caregivers), add single profile questions from the library, or build your own. You can also add them later on the Gate & security tab." />
+              <>
+              {autoSet && JSON.stringify(gateQuestions) === autoSet.json && (
+                <p className="mb-2 text-xs text-muted">Filled in from the Survey library: <b>{autoSet.name}</b> (used for {info.category} projects). Change anything here for this project only, or edit the set in Admin → Survey.</p>
+              )}
+              <QuestionBuilder value={gateQuestions} onChange={setGateQuestions} editable templatesCurrency={currency} emptyText="No gate questions yet. Pick a category to start from its Survey library set, pick an audience set, add single profile questions from the library, or build your own. You can also add them later on the Gate & security tab." />
+              </>
             )}
           </Section>
         </div>

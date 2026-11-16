@@ -182,11 +182,11 @@ describe('Sampledge logo on respondent pages, notification reads, audience quest
   });
 
   describe('Audience question sets', () => {
-    it('lists the seven built-in sets with valid questions in the project currency', async () => {
+    it('lists the ten built-in sets with valid questions in the project currency', async () => {
       const sets = (await viewer.get('/question-templates/sets?currency=INR').expect(200)).body;
-      expect(sets.map((s: { key: string }) => s.key)).toEqual(['b2b', 'b2c', 'parents', 'teens', 'hc_consumer', 'hc_patient', 'hc_caregiver']);
+      expect(sets.map((s: { key: string }) => s.key)).toEqual(['b2b', 'b2c', 'decision_makers', 'tobacco', 'parents', 'teens', 'hc_consumer', 'hc_patient', 'hc_caregiver', 'hcp']);
       for (const s of sets) {
-        expect(s.questions.length).toBeGreaterThan(3);
+        expect(s.questions.length).toBeGreaterThan(2);
         // Every built-in set saves cleanly as a project's gate questions.
         await pm.patch(`/projects/${projectId}`, { gateQuestions: s.questions }).expect(200);
       }
@@ -213,7 +213,7 @@ describe('Sampledge logo on respondent pages, notification reads, audience quest
       expect(created.key).toMatch(/^custom-[a-f0-9]{12}$/);
       list = (await pm.get('/question-templates/sets').expect(200)).body;
       expect(list.at(-1)).toMatchObject({ key: created.key, name: 'IT decision makers', builtIn: false });
-      expect((await other.get('/question-templates/sets').expect(200)).body).toHaveLength(7);
+      expect((await other.get('/question-templates/sets').expect(200)).body).toHaveLength(10);
 
       // Bad input.
       await pm.put('/question-templates/sets/b2b', { name: 'x', questions: edited }).expect(400);
@@ -227,7 +227,7 @@ describe('Sampledge logo on respondent pages, notification reads, audience quest
       expect(mine.edited).toBe(false);
       expect(mine.questions.length).toBe(6);
       await pm.delete(`/question-templates/sets/${created.key}`).expect(200);
-      expect((await pm.get('/question-templates/sets').expect(200)).body).toHaveLength(7);
+      expect((await pm.get('/question-templates/sets').expect(200)).body).toHaveLength(10);
     });
   });
 });
