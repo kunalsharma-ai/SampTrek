@@ -37,7 +37,7 @@ import { get, patch } from '@/lib/api';
 import { flag } from '@/lib/countries';
 import { hasFeature, SECURITY_LABELS } from '@/lib/types';
 
-const TABS = ['Overview', 'Vendors & links', 'Vendor unique links', 'Client unique links', 'Quotas & monitor', 'SampAudience', 'Gate & security', 'Respondent pages', 'Redirects', 'QA studio', 'Respondents', 'Answers', 'Reconcile & invoice', 'Files & requests', 'Team', 'History'] as const;
+const TABS = ['Overview', 'Client unique links', 'Vendors & links', 'Vendor unique links', 'Quotas & monitor', 'SampAudience', 'Gate & security', 'Respondent pages', 'Redirects', 'QA studio', 'Respondents', 'Answers', 'Reconcile & invoice', 'Files & requests', 'Team', 'History'] as const;
 
 export default function ProjectPage() {
   const { id } = useParams<{ id: string }>();

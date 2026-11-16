@@ -38,10 +38,18 @@ export const devicesSchema = z
   .refine((d) => d.desktop || d.mobile || d.tablet, 'Allow at least one device')
   .refine((d) => !d.mobile || d.android || d.ios, 'Choose Android, iOS or both for mobile');
 
+/**
+ * The client survey link must say where our UID goes ({uid}, or the older {session_token}), so every
+ * respondent can be tracked: a link pasted with the client's own placeholder (e.g. XXXX) is refused.
+ * The UID is shared by SampTrek and the client; the VID (vendor respondent ID) stays between SampTrek and the vendor.
+ */
+export const UID_MACRO_RE = /\{(uid|session_token)\}/i;
+export const MISSING_UID_MESSAGE = 'Put {uid} in the survey link where the client survey expects the respondent ID (e.g. replace XXXX with {uid}). Links without it cannot be saved.';
 const surveyUrl = z
   .string()
   .url()
   .refine((u) => /^https?:\/\//.test(u), 'Survey links must be http(s)')
+  .refine((u) => UID_MACRO_RE.test(u), MISSING_UID_MESSAGE)
   .optional();
 
 /** Settings that can be set once for the master project and overridden per country. */
@@ -120,9 +128,11 @@ export const updateProjectSchema = z.object({
   name: z.string().min(1).max(300).optional(),
   /** Editable later; must not be used by another project. */
   workOrderNo: z.preprocess((v) => (typeof v === 'string' && !v.trim() ? null : v), z.string().trim().max(50).nullable().optional()),
-  /** What vendors see instead of the name (empty = "Survey <code>"). */
+  /** What vendors see instead of the name (empty = "Survey <work order> · <code>"). */
   vendorTitle: z.preprocess((v) => (typeof v === 'string' && !v.trim() ? null : v), z.string().trim().max(200).nullable().optional()),
   category: z.string().min(1).max(100).optional(),
+  /** Fixes a project created under the wrong client. The contact is cleared unless one of the new client's is given. */
+  clientId: z.string().min(1).optional(),
   description: z.string().max(20000).nullable().optional(),
   clientContactId: z.string().nullable().optional(),
   salesPersonId: z.string().nullable().optional(),

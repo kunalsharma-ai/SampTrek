@@ -1,10 +1,10 @@
 'use client';
+import { surveyLinkProblem } from '@/lib/survey-link';
 import { CopyIcon, Copyable } from '@/components/copy';
 import clsx from 'clsx';
 import { AlertTriangle, CopyPlus, Pause, Pencil, Play, Plus, Save, Search, X } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { CountrySelect } from '@/components/form/combobox';
-import { AddableSelect, saveCustomOption, useCustomOptions } from '@/components/form/option-select';
 import { ErrorBox, Field, Progress, Section, StatusChip, money } from '@/components/ui';
 import { patch, post } from '@/lib/api';
 import { COUNTRIES, countryName, flag } from '@/lib/countries';
@@ -24,7 +24,6 @@ export function CountriesTab({ project, editable, reload, security }: { project:
   const [filter, setFilter] = useState('');
   const [note, setNote] = useState<{ text: string; failed: string[] } | null>(null);
   const [error, setError] = useState<unknown>(null);
-  const targetGroups = useCustomOptions('targetGroup');
   const currency = project.countries[0]?.currency ?? 'USD';
 
   const visible = useMemo(() => {
@@ -35,6 +34,8 @@ export function CountriesTab({ project, editable, reload, security }: { project:
 
   async function save(c: Country) {
     setError(null);
+    const linkProblem = surveyLinkProblem(draft.liveSurveyUrl) ?? surveyLinkProblem(draft.testSurveyUrl);
+    if (linkProblem) return setError(new Error(linkProblem));
     try {
       await patch(`/projects/${project.id}/countries/${c.id}`, {
         status: draft.status,
@@ -47,7 +48,6 @@ export function CountriesTab({ project, editable, reload, security }: { project:
         liveSurveyUrl: draft.liveSurveyUrl || undefined,
         testSurveyUrl: draft.testSurveyUrl || undefined,
       });
-      if (draft.targetGroup) saveCustomOption('targetGroup', draft.targetGroup);
       setEditing(null);
       reload();
     } catch (e) {
@@ -99,7 +99,6 @@ export function CountriesTab({ project, editable, reload, security }: { project:
         copyFromCountryId: adding.copyFromCountryId || undefined,
         copyVendors: !!adding.copyFromCountryId && adding.copyVendors,
       });
-      if (adding.targetGroup.trim()) saveCustomOption('targetGroup', adding.targetGroup);
       setAdding(null);
       reload();
     } catch (e) {
@@ -143,14 +142,14 @@ export function CountriesTab({ project, editable, reload, security }: { project:
               </div>
               <Field label="Language"><input className="input" value={adding.language} onChange={(e) => setAdding({ ...adding, language: e.target.value })} placeholder="en" /></Field>
               <Field label="Target group" hint="Needed when the country is already a market. Type a new one to add it.">
-                <AddableSelect field="targetGroup" base={[]} value={adding.targetGroup} onChange={(v) => setAdding({ ...adding, targetGroup: v })} placeholder="e.g. Gen Z" />
+                <input className="input" value={adding.targetGroup} onChange={(e) => setAdding({ ...adding, targetGroup: e.target.value })} placeholder="e.g. Gen Z" maxLength={200} />
               </Field>
               <Field label="LOI (min)"><input className="input" type="number" min={1} placeholder={String(src?.loiMinutes ?? '')} value={adding.loiMinutes} onChange={(e) => setAdding({ ...adding, loiMinutes: e.target.value })} /></Field>
               <Field label="IR %"><input className="input" type="number" min={1} max={100} placeholder={String(src?.irPercent ?? '')} value={adding.irPercent} onChange={(e) => setAdding({ ...adding, irPercent: e.target.value })} /></Field>
               <Field label={`Client CPI (${currency})`}><input className="input" type="number" step="0.01" placeholder={src ? String(Number(src.cpi)) : ''} value={adding.cpi} onChange={(e) => setAdding({ ...adding, cpi: e.target.value })} /></Field>
               <Field label="Completes"><input className="input" type="number" min={1} placeholder={String(src?.targetCompletes ?? '')} value={adding.targetCompletes} onChange={(e) => setAdding({ ...adding, targetCompletes: e.target.value })} /></Field>
-              <div className="sm:col-span-2"><Field label="Live survey link" hint="Can be added later; the market goes live only once it has one"><input className="input" placeholder="https://survey.client.com/s?rid={session_token}" value={adding.liveSurveyUrl} onChange={(e) => setAdding({ ...adding, liveSurveyUrl: e.target.value })} /></Field></div>
-              <div className="sm:col-span-2"><Field label="Test survey link"><input className="input" value={adding.testSurveyUrl} onChange={(e) => setAdding({ ...adding, testSurveyUrl: e.target.value })} /></Field></div>
+              <div className="sm:col-span-2"><Field label="Live survey link" hint={surveyLinkProblem(adding.liveSurveyUrl) ?? 'Put {uid} where the client survey expects the respondent ID. Can be added later; the market goes live only once it has one'}><input className="input" placeholder="https://survey.client.com/s?rid={uid}" value={adding.liveSurveyUrl} onChange={(e) => setAdding({ ...adding, liveSurveyUrl: e.target.value })} /></Field></div>
+              <div className="sm:col-span-2"><Field label="Test survey link" hint={surveyLinkProblem(adding.testSurveyUrl) ?? undefined}><input className="input" placeholder="https://survey.client.com/test?rid={uid}" value={adding.testSurveyUrl} onChange={(e) => setAdding({ ...adding, testSurveyUrl: e.target.value })} /></Field></div>
               <div className="sm:col-span-2">
                 <Field label="Use settings from" hint="Empty fields above are taken from this market">
                   <select className="input" value={adding.copyFromCountryId} onChange={(e) => setAdding({ ...adding, copyFromCountryId: e.target.value })}>
@@ -170,7 +169,6 @@ export function CountriesTab({ project, editable, reload, security }: { project:
             </div>
           </div>
         )}
-        <datalist id="tab-target-groups">{targetGroups.map((g) => <option key={g} value={g} />)}</datalist>
         {editable && project.countries.length > 0 && (
           <>
             <BulkFill
@@ -217,7 +215,7 @@ export function CountriesTab({ project, editable, reload, security }: { project:
                       <div className="whitespace-nowrap">{flag(c.countryCode)} {countryName(c.countryCode)}</div>
                       <div className="mt-1 flex gap-1">
                         <input className="input w-14 px-2 py-1 text-xs" aria-label="Language" defaultValue={c.language} onChange={(e) => setDraft({ ...draft, language: e.target.value })} />
-                        <input className="input w-36 px-2 py-1 text-xs" aria-label="Target group" placeholder="Target group" list="tab-target-groups" defaultValue={c.targetGroup ?? ''} onChange={(e) => setDraft({ ...draft, targetGroup: e.target.value })} />
+                        <input className="input w-36 px-2 py-1 text-xs" aria-label="Target group" placeholder="Target group" defaultValue={c.targetGroup ?? ''} onChange={(e) => setDraft({ ...draft, targetGroup: e.target.value })} />
                       </div>
                     </td>
                     <td className="td">
@@ -231,8 +229,9 @@ export function CountriesTab({ project, editable, reload, security }: { project:
                     <td className="td"><input className="input w-20 px-2 py-1" type="number" step="0.01" aria-label="CPI" defaultValue={c.cpi} onChange={(e) => setDraft({ ...draft, cpi: e.target.value })} /></td>
                     <td className="td">{c.allocations.length}</td>
                     <td className="td space-y-1">
-                      <input className="input w-72 px-2 py-1 text-xs" placeholder="Live link" defaultValue={c.liveSurveyUrl ?? ''} onChange={(e) => setDraft({ ...draft, liveSurveyUrl: e.target.value })} />
-                      <input className="input w-72 px-2 py-1 text-xs" placeholder="Test link" defaultValue={c.testSurveyUrl ?? ''} onChange={(e) => setDraft({ ...draft, testSurveyUrl: e.target.value })} />
+                      <input className={clsx('input w-72 px-2 py-1 text-xs', surveyLinkProblem(draft.liveSurveyUrl) && 'border-bad')} placeholder="Live link with {uid}" aria-label="Live link" defaultValue={c.liveSurveyUrl ?? ''} onChange={(e) => setDraft({ ...draft, liveSurveyUrl: e.target.value })} />
+                      <input className={clsx('input w-72 px-2 py-1 text-xs', surveyLinkProblem(draft.testSurveyUrl) && 'border-bad')} placeholder="Test link with {uid}" aria-label="Test link" defaultValue={c.testSurveyUrl ?? ''} onChange={(e) => setDraft({ ...draft, testSurveyUrl: e.target.value })} />
+                      {(surveyLinkProblem(draft.liveSurveyUrl) ?? surveyLinkProblem(draft.testSurveyUrl)) && <p className="w-72 whitespace-normal text-xs text-bad">{surveyLinkProblem(draft.liveSurveyUrl) ?? surveyLinkProblem(draft.testSurveyUrl)}</p>}
                     </td>
                     <td className="td">
                       <div className="flex gap-1"><button className="btn-primary px-2.5 py-1.5" onClick={() => save(c)}><Save className="h-3.5 w-3.5" /> Save</button><button className="btn-ghost px-2.5 py-1.5" onClick={() => setEditing(null)}>Cancel</button></div>
@@ -282,7 +281,7 @@ export function CountriesTab({ project, editable, reload, security }: { project:
                 <CountrySelect value={clone.code || null} onChange={(v) => setClone({ ...clone, code: v ?? '' })} />
               </Field>
             </div>
-            <Field label="Target group"><input className="input w-48" list="tab-target-groups" value={clone.targetGroup} onChange={(e) => setClone({ ...clone, targetGroup: e.target.value })} /></Field>
+            <Field label="Target group"><input className="input w-48" value={clone.targetGroup} onChange={(e) => setClone({ ...clone, targetGroup: e.target.value })} /></Field>
             <button className="btn-primary" onClick={doClone} disabled={!clone.code}>Copy</button>
             <button className="btn-ghost" onClick={() => setClone(null)}>Cancel</button>
             <p className="w-full text-xs text-muted">Survey links are not copied, because they are usually market specific.</p>

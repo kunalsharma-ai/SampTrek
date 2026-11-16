@@ -248,7 +248,7 @@ export class PortalDisputableController {
     const taken = new Set(open.flatMap((t) => t.sessionIds));
     const rows = await this.prisma.respondentSession.findMany({
       where: { organizationId: u.organizationId, isTest: false, status: 'COMPLETE', approval: 'REJECTED', invoiceId: null, vendorAllocation: { vendorId: p.vendorId }, ...(projectId ? { projectId } : {}) },
-      select: { id: true, vendorRespondentId: true, approvalAt: true, outcomeAt: true, project: { select: { id: true, projectCode: true, name: true, vendorTitle: true } }, projectCountry: { select: { countryCode: true } } },
+      select: { id: true, vendorRespondentId: true, approvalAt: true, outcomeAt: true, project: { select: { id: true, projectCode: true, name: true, vendorTitle: true, workOrderNo: true } }, projectCountry: { select: { countryCode: true } } },
       orderBy: { approvalAt: 'desc' },
       take: 1000,
     });

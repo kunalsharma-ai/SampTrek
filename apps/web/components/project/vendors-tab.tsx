@@ -45,7 +45,8 @@ export function VendorsTab({ project, editable, reload }: { project: ProjectDeta
   const [asking, setAsking] = useState<string | null>(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [editing, setEditing] = useState<{ id: string; cpi: string; targetCompletes: string; uidParam: string } | null>(null);
-  const [view, setView] = useState<'market' | 'vendor'>('market');
+  // By vendor is the default; a project with no vendor yet opens by market, where vendors are added.
+  const [view, setView] = useState<'market' | 'vendor'>(() => (project.countries.some((c) => c.allocations.length) ? 'vendor' : 'market'));
   const [error, setError] = useState<unknown>(null);
 
   useEffect(() => {
@@ -196,7 +197,7 @@ export function VendorsTab({ project, editable, reload }: { project: ProjectDeta
         title="Vendors per market"
         actions={
           <div className="grid grid-cols-2 gap-1 rounded-lg bg-sunken p-1 text-xs" role="radiogroup" aria-label="Group vendors">
-            {(['market', 'vendor'] as const).map((v) => (
+            {(['vendor', 'market'] as const).map((v) => (
               <button key={v} role="radio" aria-checked={view === v} onClick={() => setView(v)} className={clsx('rounded-md px-3 py-1 font-semibold', view === v ? 'bg-panel text-brand shadow-sm' : 'text-muted')}>
                 By {v}
               </button>

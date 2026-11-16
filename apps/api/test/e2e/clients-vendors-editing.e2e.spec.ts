@@ -179,7 +179,7 @@ describe('Clients, vendors and redirects editing (e2e)', () => {
     const vapi = api(app, vtok);
     const p = (
       await pm
-        .post('/projects', { name: 'Secret Client – Brand X concept test', category: 'B2C', clientId: client, defaults: { language: 'en', loiMinutes: 10, irPercent: 50, cpi: 5, targetCompletes: 10, liveSurveyUrl: 'https://survey.example.com/s' }, countries: [{ countryCode: 'US' }] })
+        .post('/projects', { name: 'Secret Client – Brand X concept test', category: 'B2C', clientId: client, defaults: { language: 'en', loiMinutes: 10, irPercent: 50, cpi: 5, targetCompletes: 10, liveSurveyUrl: 'https://survey.example.com/s?rid={uid}' }, countries: [{ countryCode: 'US' }] })
         .expect(201)
     ).body;
     await pm.post(`/projects/${p.id}/countries/${p.countries[0].id}/allocations`, { vendorId: vendor, cpi: 2, targetCompletes: 5 }).expect(201);

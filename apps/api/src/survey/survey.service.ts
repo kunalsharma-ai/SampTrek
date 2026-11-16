@@ -46,6 +46,11 @@ function withFraudChecks(security: Record<string, boolean>, on: boolean): Record
   return out;
 }
 
+/** "[UID]" or an unfilled macro such as "{TID}": the vendor did not put its respondent ID in the link. */
+export function isPlaceholderUid(uid: string): boolean {
+  return uid === '[UID]' || /^\{[A-Za-z0-9_]+\}$/.test(uid) || /^\[[A-Za-z0-9_]+\]$/.test(uid);
+}
+
 const GATE_KEYS = ['gateSurvey', 'captcha', 'browserFingerprinting', 'browserLanguage', 'timezoneTracking', 'cookieValidation', 'automationDetection', 'crossProjectDuplicates'] as const;
 const HASH_RE = /^[0-9a-f]{64}$/i;
 
@@ -185,8 +190,11 @@ export class SurveyService {
     if (!allocation) return { location: internalEndPage(appConfig.publicBaseUrl, 'SECURITY_REJECT') };
 
     const isTest = allocation.testEntryCode === req.code;
-    const uid = (req.query[allocation.uidParam] ?? '').trim();
-    if (!uid || uid.length > 200 || uid === '[UID]') {
+    let uid = (req.query[allocation.uidParam] ?? '').trim();
+    // A test link opened as copied (still "[UID]", or no ID at all) gets its own test ID, so the
+    // team can click it straight from the Vendors & links tab.
+    if (isTest && (!uid || isPlaceholderUid(uid))) uid = `TEST-${randomToken(10)}`;
+    if (!uid || uid.length > 200 || isPlaceholderUid(uid)) {
       // Without a respondent ID there is nothing to attribute; do not create a session.
       return { location: internalEndPage(appConfig.publicBaseUrl, 'SECURITY_REJECT') };
     }
@@ -236,7 +244,7 @@ export class SurveyService {
     const claimed = await this.prisma.uniqueLink.updateMany({ where: { id: link.id, status: 'UNUSED' }, data: { status: 'USED', usedAt: new Date() } });
     if (claimed.count === 0) return blocked('DUPLICATE');
     // The vendor may still pass its own respondent ID; otherwise the key identifies the respondent.
-    const uid = vendorUid && vendorUid !== '[UID]' ? vendorUid : link.key;
+    const uid = vendorUid && !isPlaceholderUid(vendorUid) ? vendorUid : link.key;
     return this.admit(allocation, { isTest: false, uid, req, uniqueLinkId: link.id });
   }
 
@@ -927,11 +935,14 @@ export function gateNeeded(security: Record<string, boolean>): boolean {
   return GATE_KEYS.some((k) => security[k]) || !!security.prescreening;
 }
 
-/** Client survey link: substitute macros, and append the session token if the link has no {session_token} macro. */
+/**
+ * Client survey link: substitute macros, and append the session token if the link has no UID macro.
+ * {uid} is the UID the client sees (our session token); {session_token} is its older name.
+ */
 export function buildSurveyLink(template: string, v: { token: string; countryCode: string; projectCode: string }) {
-  const hasToken = template.includes('{session_token}');
+  const hasToken = /\{(session_token|uid)\}/i.test(template);
   const filled = template
-    .replace(/\{session_token\}/g, encodeURIComponent(v.token))
+    .replace(/\{(session_token|uid)\}/gi, encodeURIComponent(v.token))
     .replace(/\{country_code\}/g, encodeURIComponent(v.countryCode))
     .replace(/\{project_code\}/g, encodeURIComponent(v.projectCode));
   const url = new URL(filled);

@@ -9,7 +9,8 @@ import type { ProjectDetail } from './types';
  * emails use this title instead (docs/CLIENTS_VENDORS_EDITING.md).
  */
 export function VendorTitle({ project, editable, reload }: { project: ProjectDetail; editable: boolean; reload: () => void }) {
-  const fallback = `Survey ${project.projectCode}`;
+  // Default: work order number and project ID, as the team refers to surveys by both.
+  const fallback = project.workOrderNo ? `Survey ${project.workOrderNo} · ${project.projectCode}` : `Survey ${project.projectCode}`;
   return (
     <div className="card flex flex-wrap items-start gap-3 p-4">
       <span className="icon-tile tone-blue hidden sm:grid"><EyeOff className="h-5 w-5" aria-hidden /></span>

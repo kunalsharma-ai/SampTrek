@@ -76,7 +76,9 @@ export function QuestionBuilder({
   templatesCurrency?: string;
   emptyText: string;
 }) {
-  const [open, setOpen] = useState<string | null>(null);
+  // The open question is tracked by position, not by ID: typing the question (which fills in the ID)
+  // or editing the Question ID must not close the editor.
+  const [open, setOpen] = useState<number | null>(null);
   const [menu, setMenu] = useState<'add' | 'library' | null>(null);
   const [setsOpen, setSetsOpen] = useState(false);
   const [library, setLibrary] = useState<{ group: string; question: Question }[] | null>(null);
@@ -103,10 +105,15 @@ export function QuestionBuilder({
     const next = [...value];
     [next[i], next[i + d]] = [next[i + d], next[i]];
     onChange(next);
+    setOpen((o) => (o === i ? i + d : o === i + d ? i : o));
+  };
+  const remove = (i: number) => {
+    onChange(value.filter((_, k) => k !== i));
+    setOpen((o) => (o === null || o === i ? null : o > i ? o - 1 : o));
   };
   function add(q: Question) {
     onChange([...value, q]);
-    setOpen(q.id);
+    setOpen(value.length);
     setMenu(null);
   }
 
@@ -115,12 +122,12 @@ export function QuestionBuilder({
       {value.length === 0 && <p className="mb-3 rounded-lg border border-dashed border-line p-4 text-sm text-muted">{emptyText}</p>}
       <ol className="space-y-2">
         {value.map((q, i) => {
-          const expanded = open === q.id;
+          const expanded = open === i;
           const problems = questionProblems(q);
           return (
             <li key={i} className={clsx('rounded-lg border bg-panel', problems.length && !expanded ? 'border-bad/50' : 'border-line')}>
               <div className="flex items-start gap-2 p-3">
-                <button type="button" onClick={() => setOpen(expanded ? null : q.id)} aria-expanded={expanded} className="flex min-w-0 flex-1 items-start gap-3 text-left">
+                <button type="button" onClick={() => setOpen(expanded ? null : i)} aria-expanded={expanded} className="flex min-w-0 flex-1 items-start gap-3 text-left">
                   <span className="mt-0.5 w-6 shrink-0 text-sm font-semibold tabular-nums text-muted">{i + 1}.</span>
                   <span className="min-w-0 flex-1">
                     <span className="block truncate font-medium">{q.text || <span className="text-muted">Untitled question</span>}</span>
@@ -133,7 +140,7 @@ export function QuestionBuilder({
                     <IconBtn label="Move up" disabled={i === 0} onClick={() => move(i, -1)}><ArrowUp className="h-3.5 w-3.5" /></IconBtn>
                     <IconBtn label="Move down" disabled={i === value.length - 1} onClick={() => move(i, 1)}><ArrowDown className="h-3.5 w-3.5" /></IconBtn>
                     <IconBtn label="Duplicate" onClick={() => add({ ...structuredClone(q), id: uniqueId(`${q.id}_copy`.slice(0, 32), ids) })}><Copy className="h-3.5 w-3.5" /></IconBtn>
-                    <IconBtn label="Delete" onClick={() => onChange(value.filter((_, k) => k !== i))}><Trash2 className="h-3.5 w-3.5" /></IconBtn>
+                    <IconBtn label="Delete" onClick={() => remove(i)}><Trash2 className="h-3.5 w-3.5" /></IconBtn>
                   </div>
                 )}
               </div>

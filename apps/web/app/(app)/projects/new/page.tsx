@@ -6,13 +6,14 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { DateRangePicker } from '@/components/form/date';
 import { Combobox, CountrySelect, CurrencySelect } from '@/components/form/combobox';
-import { AddableSelect, loadCustomOptions, saveCustomOption, useCustomOptions } from '@/components/form/option-select';
+import { AddableSelect, loadCustomOptions } from '@/components/form/option-select';
 import { BulkFill } from '@/components/project/bulk-fill';
 import { cleanQuestion, QuestionBuilder, questionProblems } from '@/components/project/question-builder';
 import { BriefBanner, BriefReader, useBriefAvailability, type BriefInfo } from '@/components/project/brief-reader';
 import { MobileOsPicker, devicesProblem, withOs, type DeviceSettings } from '@/components/project/mobile-os';
 import { ErrorBox, Field, Loading, PageHeader, Section, Toggle } from '@/components/ui';
 import { api, get, post } from '@/lib/api';
+import { surveyLinkProblem } from '@/lib/survey-link';
 import { describeTemplate, type ProjectTemplate, type TemplateForm } from '@/lib/templates';
 import { COUNTRIES, countryName, flag } from '@/lib/countries';
 import { InfoTip } from '@/components/help';
@@ -102,7 +103,6 @@ function CreateProjectPage() {
   const [gateQuestions, setGateQuestions] = useState<Question[]>([]);
   const [selected, setSelected] = useState<number[]>([]);
   const [filter, setFilter] = useState('');
-  const targetGroups = useCustomOptions('targetGroup');
   const [paste, setPaste] = useState<string | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
@@ -310,6 +310,7 @@ function CreateProjectPage() {
     setSelected([]);
   };
   // The same country may be added again for another target group; the exact same market twice is flagged.
+  const linkProblem = [shared.liveSurveyUrl, shared.testSurveyUrl, ...rows.flatMap((r) => [r.liveSurveyUrl, r.testSurveyUrl])].map(surveyLinkProblem).find(Boolean) ?? null;
   const duplicates = useMemo(() => new Set(rows.flatMap((r, i) => (rows.some((o, j) => j !== i && sameMarket(r, o, shared.targetGroup)) ? [i] : []))), [rows, shared.targetGroup]);
   const visible = useMemo(() => {
     const q = filter.trim().toLowerCase();
@@ -381,7 +382,6 @@ function CreateProjectPage() {
       });
       lastSaved.current = draftJson;
       // Target groups typed on the form become options for next time.
-      for (const g of new Set([shared.targetGroup, ...rows.map((r) => r.targetGroup)].map((x) => x.trim()).filter(Boolean))) saveCustomOption('targetGroup', g);
       if (rememberVendors) await post('/custom-options/replace', { field: 'defaultVendor', values: chosen.map((v) => v.vendorId) }).catch(() => undefined);
       if (p.templateSkipped?.length) {
         try {
@@ -568,12 +568,12 @@ function CreateProjectPage() {
               </div>
               <div className="sm:col-span-3">
                 <Field label="Target group" hint="Choose one or type a new one to add it">
-                  <AddableSelect field="targetGroup" base={[]} value={shared.targetGroup} onChange={(v) => setShared({ ...shared, targetGroup: v })} placeholder="e.g. Gen Z, IT decision makers" />
+                  <input className="input" value={shared.targetGroup} onChange={(e) => setShared({ ...shared, targetGroup: e.target.value })} placeholder="e.g. Gen Z, IT decision makers" maxLength={200} />
                 </Field>
               </div>
               <div className="sm:col-span-3" />
-              <div className="sm:col-span-3"><Field label="Live survey link" hint="Use {session_token} where the survey expects the respondent ID"><input className="input" value={shared.liveSurveyUrl} placeholder="https://survey.client.com/s?rid={session_token}" onChange={(e) => setShared({ ...shared, liveSurveyUrl: e.target.value })} /></Field></div>
-              <div className="sm:col-span-3"><Field label="Test survey link"><input className="input" value={shared.testSurveyUrl} onChange={(e) => setShared({ ...shared, testSurveyUrl: e.target.value })} /></Field></div>
+              <div className="sm:col-span-3"><Field label="Live survey link" hint={surveyLinkProblem(shared.liveSurveyUrl) ?? 'Put {uid} where the client survey expects the respondent ID (e.g. replace XXXX with {uid})'}><input className={clsx('input', surveyLinkProblem(shared.liveSurveyUrl) && 'border-bad')} value={shared.liveSurveyUrl} placeholder="https://survey.client.com/s?rid={uid}" onChange={(e) => setShared({ ...shared, liveSurveyUrl: e.target.value })} /></Field></div>
+              <div className="sm:col-span-3"><Field label="Test survey link" hint={surveyLinkProblem(shared.testSurveyUrl) ?? undefined}><input className={clsx('input', surveyLinkProblem(shared.testSurveyUrl) && 'border-bad')} placeholder="https://survey.client.com/test?rid={uid}" value={shared.testSurveyUrl} onChange={(e) => setShared({ ...shared, testSurveyUrl: e.target.value })} /></Field></div>
             </div>
           </Section>
 
@@ -600,7 +600,6 @@ function CreateProjectPage() {
 
             {rows.length > 0 && (
               <>
-                <datalist id="target-groups">{targetGroups.map((g) => <option key={g} value={g} />)}</datalist>
                 <BulkFill
                   selected={selected.length}
                   total={visible.length}
@@ -610,7 +609,7 @@ function CreateProjectPage() {
                     { key: 'irPercent', label: 'IR %', type: 'number', width: 'w-20' },
                     { key: 'cpi', label: `CPI (${currency})`, type: 'number', step: '0.01', width: 'w-24' },
                     { key: 'targetCompletes', label: 'Completes', type: 'number', width: 'w-24' },
-                    { key: 'targetGroup', label: 'Target group', width: 'w-40', list: 'target-groups' },
+                    { key: 'targetGroup', label: 'Target group', width: 'w-40', },
                     { key: 'liveSurveyUrl', label: 'Live link', width: 'w-64', placeholder: 'https://…' },
                     { key: 'testSurveyUrl', label: 'Test link', width: 'w-64', placeholder: 'https://…' },
                   ]}
@@ -643,14 +642,14 @@ function CreateProjectPage() {
                               {duplicates.has(i) && <div className="flex items-center gap-1 text-xs text-bad"><AlertTriangle className="h-3 w-3" /> Same market twice: set a different target group</div>}
                             </td>
                             <td className="td"><input className="input w-16 px-2 py-1" value={r.language} onChange={(e) => setRow(i, { language: e.target.value })} /></td>
-                            <td className="td"><input className={clsx('input w-40 px-2 py-1', duplicates.has(i) && 'border-bad')} list="target-groups" placeholder={shared.targetGroup || 'Target group'} value={r.targetGroup} onChange={(e) => setRow(i, { targetGroup: e.target.value })} /></td>
+                            <td className="td"><input className={clsx('input w-40 px-2 py-1', duplicates.has(i) && 'border-bad')} placeholder={shared.targetGroup || 'Target group'} value={r.targetGroup} onChange={(e) => setRow(i, { targetGroup: e.target.value })} /></td>
                             {(['loiMinutes', 'irPercent', 'cpi'] as const).map((k) => (
                               <td key={k} className="td"><input className={clsx('input w-20 px-2 py-1', r[k] !== '' && 'border-brand/60')} type="number" step={k === 'cpi' ? '0.01' : undefined} placeholder={String(shared[k] ?? '')} value={r[k]} onChange={(e) => setRow(i, { [k]: num(e.target.value) })} /></td>
                             ))}
                             <td className="td"><input className={clsx('input w-20 px-2 py-1', r.targetCompletes !== '' && 'border-brand/60')} type="number" placeholder={String(shared.targetCompletes)} value={r.targetCompletes} onChange={(e) => setRow(i, { targetCompletes: num(e.target.value) })} /></td>
                             <td className="td space-y-1">
-                              <input className="input w-56 px-2 py-1" aria-label={`Live link for ${countryName(r.countryCode)}`} placeholder={shared.liveSurveyUrl ? 'same as basics' : 'add link before going live'} value={r.liveSurveyUrl} onChange={(e) => setRow(i, { liveSurveyUrl: e.target.value })} />
-                              <input className="input w-56 px-2 py-1 text-xs" aria-label={`Test link for ${countryName(r.countryCode)}`} placeholder={shared.testSurveyUrl ? 'test: same as basics' : 'test link (optional)'} value={r.testSurveyUrl ?? ''} onChange={(e) => setRow(i, { testSurveyUrl: e.target.value })} />
+                              <input className={clsx('input w-56 px-2 py-1', surveyLinkProblem(r.liveSurveyUrl) && 'border-bad')} title={surveyLinkProblem(r.liveSurveyUrl) ?? undefined} aria-label={`Live link for ${countryName(r.countryCode)}`} placeholder={shared.liveSurveyUrl ? 'same as basics' : 'add link before going live'} value={r.liveSurveyUrl} onChange={(e) => setRow(i, { liveSurveyUrl: e.target.value })} />
+                              <input className={clsx('input w-56 px-2 py-1 text-xs', surveyLinkProblem(r.testSurveyUrl) && 'border-bad')} title={surveyLinkProblem(r.testSurveyUrl) ?? undefined} aria-label={`Test link for ${countryName(r.countryCode)}`} placeholder={shared.testSurveyUrl ? 'test: same as basics' : 'test link (optional)'} value={r.testSurveyUrl ?? ''} onChange={(e) => setRow(i, { testSurveyUrl: e.target.value })} />
                             </td>
                             <td className="td">
                               <div className="flex gap-1">
@@ -772,8 +771,9 @@ function CreateProjectPage() {
               ))}
             </div>
           </Section>
+          {linkProblem && <p className="text-sm text-bad">{linkProblem}</p>}
           {duplicates.size > 0 && <p className="text-sm text-bad">Some markets are listed twice. Give each a different target group.</p>}
-          <button className="btn-primary w-full py-2.5" onClick={submit} disabled={busy || !rows.length || duplicates.size > 0 || !!devicesProblem(devices)}>
+          <button className="btn-primary w-full py-2.5" onClick={submit} disabled={busy || !rows.length || duplicates.size > 0 || !!devicesProblem(devices) || !!linkProblem}>
             {busy ? 'Creating…' : rows.length ? `Create project in ${rows.length} ${rows.length === 1 ? 'market' : 'markets'}` : 'Add at least one country'}
           </button>
         </div>
