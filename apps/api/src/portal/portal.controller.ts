@@ -12,6 +12,7 @@ import { EntitlementsService } from '../super-admin/entitlements';
  * - Portal users never pass the staff endpoints (the global guard defaults to staff roles).
  */
 import { forVendor } from '../common/vendor-safe';
+import { entryQuery } from '../projects/markets';
 import { BadRequestException, Body, Controller, ForbiddenException, Get, Module, NotFoundException, Param, Patch, Post, Query, Res } from '@nestjs/common';
 import { Response } from 'express';
 import { Prisma } from '@prisma/client';
@@ -116,6 +117,7 @@ export class VendorPortalController {
       where: { vendorId, projectCountry: { project: { status: { in: [...VISIBLE_PROJECT_STATUSES] } } } },
       orderBy: { createdAt: 'desc' },
       include: {
+        vendor: { select: { uidMacro: true } },
         projectCountry: {
           select: {
             countryCode: true, language: true, targetGroup: true, loiMinutes: true, irPercent: true, currency: true, status: true,
@@ -157,8 +159,8 @@ export class VendorPortalController {
         targetCompletes: a.targetCompletes,
         completes: a.completes,
         uidParam: a.uidParam,
-        entryLink: `${base}/s/${a.entryCode}?${encodeURIComponent(a.uidParam)}=[UID]`,
-        testEntryLink: `${base}/s/${a.testEntryCode}?${encodeURIComponent(a.uidParam)}=[UID]`,
+        entryLink: `${base}/s/${a.entryCode}?${entryQuery(a.uidParam, a.vendor)}`,
+        testEntryLink: `${base}/s/${a.testEntryCode}?${entryQuery(a.uidParam, a.vendor)}`,
         uniqueLinksOnly: a.uniqueLinksOnly,
         uniqueLinks: {
           total: linkTotals.find((l) => l.vendorAllocationId === a.id)?._count._all ?? 0,

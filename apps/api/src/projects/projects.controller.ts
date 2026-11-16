@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Module, Param, ParseIntPipe, Patch, Post, Put, Query } from '@nestjs/common';
 import { securityOverridesSchema } from '../survey/vendor-security';
+import { vendorReportQuery } from './vendor-report';
 import { ProjectHistoryService } from './project-history';
 import { ProjectDraftsController, ProjectTemplatesController } from './project-templates';
 import { z } from 'zod';
@@ -116,6 +117,12 @@ export class ProjectsController {
     @Body(new ZodPipe(vendorSecurityBody)) body: z.infer<typeof vendorSecurityBody>,
   ) {
     return this.projects.setVendorSecurity(u, id, vendorId, body.overrides);
+  }
+
+  /** One vendor's respondents in this project, paged, for the View report popup. */
+  @Get(':id/vendors/:vendorId/report')
+  vendorReport(@CurrentUser() u: AuthUser, @Param('id') id: string, @Param('vendorId') vendorId: string, @Query(new ZodPipe(vendorReportQuery)) q: z.infer<typeof vendorReportQuery>) {
+    return this.projects.vendorReport(u, id, vendorId, q);
   }
 
   @Patch(':id/countries/:countryId/allocations/:allocationId')

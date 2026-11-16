@@ -87,13 +87,15 @@ export const addCountrySchema = countryInputSchema.extend({
   copyVendors: z.boolean().default(false),
 });
 
-const uidParam = z.string().regex(/^[A-Za-z0-9_.-]{1,64}$/, 'Use letters, numbers, dot, dash or underscore');
+export const uidParam = z.string().regex(/^[A-Za-z0-9_.-]{1,64}$/, 'Use letters, numbers, dot, dash or underscore');
 
 /** A vendor added to every market when the project is created. Payout defaults to nothing: it must be given. */
 export const createVendorSchema = z.object({
   vendorId: z.string().min(1),
-  cpi: z.number().min(0).max(100000),
-  uidParam: uidParam.default('vid'),
+  /** Left out: the vendor's payout share of each market's client CPI (Vendors page). */
+  cpi: z.number().min(0).max(100000).optional(),
+  /** Left out: the vendor's own link variable, else "vid". */
+  uidParam: uidParam.optional(),
   /** Lets the payout be higher than the client CPI (a loss-making market, on purpose). */
   allowAboveCpi: z.boolean().default(false),
 });
@@ -128,6 +130,8 @@ export const createProjectSchema = z.object({
   speederCheck: speederCheckSchema.optional(),
   fraudRules: fraudRulesSchema.optional(),
   vendors: z.array(createVendorSchema).max(50).default([]),
+  /** Adds the vendors marked "auto assign" (Vendors page) to every market. The web form lists them itself and sends false. */
+  autoAssignVendors: z.boolean().default(true),
   fieldStartAt: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD').optional(),
   fieldEndAt: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD').optional(),
 }).refine((b) => !b.fieldStartAt || !b.fieldEndAt || b.fieldStartAt <= b.fieldEndAt, { message: 'The field end date must be on or after the start date', path: ['fieldEndAt'] });
@@ -198,10 +202,11 @@ export const cloneProjectSchema = z.object({
 
 export const allocationSchema = z.object({
   vendorId: z.string().min(1),
-  cpi: z.number().min(0).max(100000),
+  /** Left out: the vendor's payout share of the client CPI (Vendors page). */
+  cpi: z.number().min(0).max(100000).optional(),
   targetCompletes: z.number().int().min(1),
-  /** The web app sends "vid" (the team's convention); API callers that leave it out keep "uid". */
-  uidParam: uidParam.default('uid'),
+  /** The web app sends "vid" (the team's convention); left out, the vendor's own link variable, else "uid". */
+  uidParam: uidParam.optional(),
   callbackUrlTemplate: z.string().url().optional(),
   allowAboveCpi: z.boolean().default(false),
 });

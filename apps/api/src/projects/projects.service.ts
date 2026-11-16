@@ -1,3 +1,4 @@
+import { vendorReport, vendorReportQuery } from './vendor-report';
 import { cleanOverrides, effectiveSecurity, type SecurityOverrides } from '../survey/vendor-security';
 import { EntitlementsService } from '../super-admin/entitlements';
 import { BadRequestException, Injectable, NotFoundException, ConflictException } from '@nestjs/common';
@@ -18,7 +19,7 @@ import { emptyFieldMetrics, fieldMetrics, SPEEDER_DETAIL } from './field-metrics
 import { autopilotOf } from '../monitor/monitor.rules';
 import { claimManualWorkOrder, takeWorkOrder } from '../numbering/numbering';
 import { LOGO_SELECT, withLogoUrl } from '../parties/logos';
-import { assertPayout, launchProblems, marketKey, marketLabel, sameMarket } from './markets';
+import { assertPayout, entryQuery, launchProblems, marketKey, marketLabel, resolvePayout, sameMarket } from './markets';
 import {
   addCountrySchema,
   allocationSchema,
@@ -85,16 +86,24 @@ export class ProjectsService {
     if (errors.length) throw new BadRequestException({ message: 'Country configuration is incomplete', issues: errors });
 
     // Vendors chosen on the form go into every market; payouts above the client CPI need a confirmation.
-    const vendorRows = input.vendors.length
-      ? await this.prisma.vendor.findMany({ where: { organizationId: u.organizationId, id: { in: input.vendors.map((v) => v.vendorId) } }, select: { id: true, name: true, status: true } })
+    // Vendors marked "auto assign" join too (feedback 2026-11-16), paid their share of each market's CPI.
+    const VENDOR_SELECT = { id: true, name: true, status: true, payoutSharePercent: true, uidParam: true, uidMacro: true } as const;
+    const autoVendors = input.autoAssignVendors
+      ? (await this.prisma.vendor.findMany({ where: { organizationId: u.organizationId, autoAssign: true, status: 'ACTIVE', payoutSharePercent: { not: null } }, select: { id: true } })).filter((v) => !input.vendors.some((x) => x.vendorId === v.id))
       : [];
-    for (const v of input.vendors) {
+    const chosen = [...input.vendors, ...autoVendors.map((v) => ({ vendorId: v.id, cpi: undefined, uidParam: undefined, allowAboveCpi: false }))];
+    const vendorRows = chosen.length ? await this.prisma.vendor.findMany({ where: { organizationId: u.organizationId, id: { in: chosen.map((v) => v.vendorId) } }, select: VENDOR_SELECT }) : [];
+    for (const v of chosen) {
       const vendor = vendorRows.find((x) => x.id === v.vendorId);
       if (!vendor) throw new BadRequestException('Vendor not found');
       if (vendor.status !== 'ACTIVE') throw new BadRequestException({ message: `${vendor.name} is inactive. Make the vendor active first (Vendors page).`, code: 'VENDOR_INACTIVE' });
-      for (const c of countries) assertPayout(v.cpi, c.cpi!, c.currency ?? 'USD', c as never, vendor.name, v.allowAboveCpi);
+      for (const c of countries) {
+        const payout = resolvePayout(v.cpi, Number(c.cpi!), vendor);
+        if (payout === null) throw new BadRequestException(`Enter a payout for ${vendor.name}, or set its payout share on the Vendors page`);
+        assertPayout(payout, c.cpi!, c.currency ?? 'USD', c as never, vendor.name, v.allowAboveCpi);
+      }
     }
-    if (new Set(input.vendors.map((v) => v.vendorId)).size !== input.vendors.length) throw new BadRequestException('A vendor is listed twice');
+    if (new Set(chosen.map((v) => v.vendorId)).size !== chosen.length) throw new BadRequestException('A vendor is listed twice');
 
     const template = input.templateId ? await this.prisma.projectTemplate.findFirst({ where: { id: input.templateId, organizationId: u.organizationId } }) : null;
     if (input.templateId && !template) throw new BadRequestException('Template not found');
@@ -168,13 +177,14 @@ export class ProjectsService {
         fromTemplate = templateRedirects(extras, applied.activeVendors);
         await tx.projectTemplate.update({ where: { id: template.id }, data: { useCount: { increment: 1 }, lastUsedAt: new Date() } });
       }
-      if (input.vendors.length) {
-        const created = await tx.projectCountry.findMany({ where: { projectId: p.id }, select: { id: true, targetCompletes: true, allocations: { select: { vendorId: true } } } });
+      if (chosen.length) {
+        const created = await tx.projectCountry.findMany({ where: { projectId: p.id }, select: { id: true, cpi: true, targetCompletes: true, allocations: { select: { vendorId: true } } } });
         for (const c of created)
-          for (const v of input.vendors) {
+          for (const v of chosen) {
             if (c.allocations.some((a) => a.vendorId === v.vendorId)) continue; // already there from the template
+            const vendor = vendorRows.find((x) => x.id === v.vendorId)!;
             await tx.vendorAllocation.create({
-              data: { projectCountryId: c.id, vendorId: v.vendorId, cpi: Number(v.cpi), targetCompletes: c.targetCompletes, uidParam: v.uidParam, entryCode: randomToken(12), testEntryCode: randomToken(12) },
+              data: { projectCountryId: c.id, vendorId: v.vendorId, cpi: resolvePayout(v.cpi, Number(c.cpi), vendor)!, targetCompletes: c.targetCompletes, uidParam: v.uidParam ?? vendor.uidParam ?? 'vid', entryCode: randomToken(12), testEntryCode: randomToken(12) },
             });
           }
       }
@@ -360,7 +370,7 @@ export class ProjectsService {
           orderBy: [{ countryCode: 'asc' }, { createdAt: 'asc' }],
           include: {
             quotas: true,
-            allocations: { include: { vendor: { select: { id: true, name: true, code: true, status: true, contactName: true, contactEmail: true, securityOverrides: true, ...LOGO_SELECT } } }, orderBy: { createdAt: 'asc' } },
+            allocations: { include: { vendor: { select: { id: true, name: true, code: true, status: true, contactName: true, contactEmail: true, securityOverrides: true, uidMacro: true, ...LOGO_SELECT } } }, orderBy: { createdAt: 'asc' } },
           },
         },
       },
@@ -408,8 +418,8 @@ export class ProjectsService {
           ...a,
           vendor: withLogoUrl('vendor', a.vendor),
           // With URL protection on, vendors append sig = hex HMAC-SHA256(their signing secret, UID).
-          entryLink: `${base}/s/${a.entryCode}?${encodeURIComponent(a.uidParam)}=[UID]${signedFor(a) ? '&sig=[SIG]' : ''}`,
-          testEntryLink: `${base}/s/${a.testEntryCode}?${encodeURIComponent(a.uidParam)}=[UID]${signedFor(a) ? '&sig=[SIG]' : ''}`,
+          entryLink: `${base}/s/${a.entryCode}?${entryQuery(a.uidParam, a.vendor)}${signedFor(a) ? '&sig=[SIG]' : ''}`,
+          testEntryLink: `${base}/s/${a.testEntryCode}?${entryQuery(a.uidParam, a.vendor)}${signedFor(a) ? '&sig=[SIG]' : ''}`,
           stats: allocStats.get(a.id) ?? emptyStats(),
         })),
       })),
@@ -751,16 +761,18 @@ export class ProjectsService {
     const vendor = await this.prisma.vendor.findFirst({ where: { id: body.vendorId, organizationId: u.organizationId } });
     if (!vendor) throw new BadRequestException('Vendor not found');
     if (vendor.status !== 'ACTIVE') throw new BadRequestException({ message: `${vendor.name} is inactive. Make the vendor active first (Vendors page).`, code: 'VENDOR_INACTIVE' });
-    assertPayout(body.cpi, Number(country.cpi), country.currency, country, vendor.name, allowAboveCpi);
+    const payout = resolvePayout(body.cpi, Number(country.cpi), vendor);
+    if (payout === null) throw new BadRequestException(`Enter a payout for ${vendor.name}, or set its payout share on the Vendors page`);
+    assertPayout(payout, Number(country.cpi), country.currency, country, vendor.name, allowAboveCpi);
     const exists = await this.prisma.vendorAllocation.findFirst({ where: { projectCountryId: countryId, vendorId: vendor.id } });
     if (exists) throw new BadRequestException(`${vendor.name} is already allocated to this country`);
     const a = await this.prisma.vendorAllocation.create({
       data: {
         projectCountryId: countryId,
         vendorId: vendor.id,
-        cpi: Number(body.cpi),
+        cpi: payout,
         targetCompletes: body.targetCompletes,
-        uidParam: body.uidParam,
+        uidParam: body.uidParam ?? vendor.uidParam ?? 'uid',
         callbackUrlTemplate: body.callbackUrlTemplate,
         entryCode: randomToken(12),
         testEntryCode: randomToken(12),
@@ -783,6 +795,10 @@ export class ProjectsService {
     });
     await this.audit.record({ organizationId: u.organizationId, actorId: u.id, action: 'allocation.update', entityType: 'VendorAllocation', entityId: allocationId, detail: body });
     return a;
+  }
+
+  vendorReport(u: AuthUser, projectId: string, vendorId: string, q: z.infer<typeof vendorReportQuery>) {
+    return vendorReport(this.prisma, u.organizationId, projectId, vendorId, q);
   }
 
   /** Sets the vendor's security overrides on every one of its markets in this project. */
