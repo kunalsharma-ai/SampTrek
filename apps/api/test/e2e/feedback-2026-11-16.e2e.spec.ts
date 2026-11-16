@@ -251,7 +251,10 @@ describe('Feedback 2026-11-16: vendor setup and report (e2e)', () => {
     const page2 = (await pm.get(`/projects/${p.id}/vendors/${fcId}/report?take=10&skip=10`).expect(200)).body;
     expect(page2.rows).toHaveLength(2);
     const found = (await pm.get(`/projects/${p.id}/vendors/${fcId}/report?q=R1`).expect(200)).body;
-    expect(found.rows.map((r: { respondentId: string }) => r.respondentId).sort()).toEqual(['R1', 'R10', 'R11', 'R12']);
+    // Search also matches the UID (a random token), so another row can match through its UID.
+    const byId = found.rows.filter((r: { respondentId: string }) => r.respondentId.startsWith('R1'));
+    expect(byId.map((r: { respondentId: string }) => r.respondentId).sort()).toEqual(['R1', 'R10', 'R11', 'R12']);
+    for (const r of found.rows as { respondentId: string; uid: string }[]) expect(r.respondentId.startsWith('R1') || r.uid.toLowerCase().includes('r1')).toBe(true);
     expect(found.rows.find((r: { respondentId: string }) => r.respondentId === 'R1').gate).toEqual({ age: '34' });
     expect((await pm.get(`/projects/${p.id}/vendors/${fcId}/report?all=true`).expect(200)).body.rows).toHaveLength(12);
     await pm.get(`/projects/${p.id}/vendors/${fcId}/report?take=500`).expect(400);
