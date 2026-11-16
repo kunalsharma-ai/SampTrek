@@ -1,6 +1,6 @@
 'use client';
 import clsx from 'clsx';
-import { Baby, Bookmark, Briefcase, Check, ChevronDown, GraduationCap, HandHeart, HeartPulse, Plus, RotateCcw, Save, ShoppingBag, Stethoscope, Trash2, Users, X } from 'lucide-react';
+import { Baby, Bookmark, Briefcase, Cigarette, Crown, Check, ChevronDown, GraduationCap, HandHeart, HeartPulse, Plus, RotateCcw, Save, ShoppingBag, Stethoscope, Trash2, Users, X } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { InfoTip } from '@/components/help';
@@ -13,6 +13,8 @@ export interface QuestionSetInfo {
   name: string;
   description: string;
   questions: Question[];
+  /** Project categories that start with this set as their gate survey. */
+  categories: string[];
   builtIn: boolean;
   edited: boolean;
   updatedAt: string | null;
@@ -27,6 +29,9 @@ const ICONS: Record<string, typeof Briefcase> = {
   hc_consumer: HeartPulse,
   hc_patient: Stethoscope,
   hc_caregiver: HandHeart,
+  decision_makers: Crown,
+  tobacco: Cigarette,
+  hcp: Stethoscope,
 };
 
 /** Adds the set's questions that are not on the list yet (same id = same question). Max 30 in all. */

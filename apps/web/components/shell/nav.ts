@@ -1,5 +1,5 @@
 import { hasFeature, type Features } from '@/lib/types';
-import { MessageCircle, CreditCard, Database, PieChart, Crown, Columns3, Activity, Route, MessagesSquare, ListChecks, Sparkles, BarChart3, BookOpenCheck, Users, HandCoins, Building2, FolderKanban, FormInput, ReceiptText, KeyRound, LayoutDashboard, Palette, PlugZap, PlusCircle, Settings, ShieldCheck, Stamp, ToggleRight, Trophy, Truck, type LucideIcon } from 'lucide-react';
+import { MessageCircle, CreditCard, Database, PieChart, Crown, Columns3, Activity, Route, MessagesSquare, ListChecks, ClipboardList, LifeBuoy, Sparkles, BarChart3, BookOpenCheck, Users, HandCoins, Building2, FolderKanban, FormInput, ReceiptText, KeyRound, LayoutDashboard, Palette, PlugZap, PlusCircle, Settings, ShieldCheck, Stamp, ToggleRight, Trophy, Truck, type LucideIcon } from 'lucide-react';
 
 export type NavGroup = 'Main' | 'Fieldwork' | 'Finance' | 'Workspace' | 'Admin';
 export interface NavItem { href: string; label: string; icon: LucideIcon; group: NavGroup; keywords?: string; editorsOnly?: boolean; adminOnly?: boolean; feature?: string; superAdminOnly?: boolean }
@@ -32,6 +32,7 @@ export const NAV: NavItem[] = [
   { href: '/chat', label: 'Team chat', icon: MessageCircle, group: 'Workspace', keywords: 'chat message messages talk team internal announcements dm direct group project room updates offline', feature: 'chat' },
   { href: '/requests', label: 'Requests', icon: MessagesSquare, group: 'Workspace', keywords: 'tickets support client vendor portal disputes questions issues', feature: 'requests' },
   { href: '/copilot', label: 'AI copilot', icon: Sparkles, group: 'Workspace', keywords: 'assistant ai gemini voice ask chat summarise report', feature: 'copilot' },
+  { href: '/help', label: 'Help', icon: LifeBuoy, group: 'Workspace', keywords: 'help guide how to manual screenshots tutorial faq uid vid questions support' },
   { href: '/portal-access', label: 'Portal access', icon: KeyRound, group: 'Admin', keywords: 'client vendor logins', feature: 'portal_access' },
   { href: '/settings/integrations', label: 'Integrations', icon: PlugZap, group: 'Admin', keywords: 'connect email smtp zoho mail google microsoft sso sign-in gemini ai api key zoho books xero quickbooks tally sampbidx bidzo setup keys', adminOnly: true, feature: 'integrations' },
   { href: '/settings/team', label: 'Team', icon: Users, group: 'Admin', keywords: 'staff users invite people roles deactivate password', adminOnly: true, feature: 'team' },
@@ -39,10 +40,11 @@ export const NAV: NavItem[] = [
   { href: '/settings/privacy', label: 'Privacy', icon: ShieldCheck, group: 'Admin', keywords: 'gdpr retention consent erase delete anonymise personal data', adminOnly: true, feature: 'privacy' },
   { href: '/settings/subscription', label: 'Subscription', icon: CreditCard, group: 'Admin', keywords: 'plan billing pay payment renew upgrade invoice receipt razorpay stripe bank transfer upi', adminOnly: true },
   { href: '/settings/branding', label: 'Branding', icon: Stamp, group: 'Admin', keywords: 'white label logo colours domain custom brand name email sender', adminOnly: true, feature: 'branding' },
+  { href: '/settings/surveys', label: 'Survey', icon: ClipboardList, group: 'Admin', keywords: 'survey library gate survey audience sets screener questions consumer tobacco b2b decision makers healthcare hcp caregiver demographics', feature: 'settings' },
   { href: '/settings', label: 'Settings', icon: Settings, group: 'Admin', keywords: 'organization redirects domains', feature: 'settings' },
   { href: '/super-admin', label: 'Super Admin', icon: Crown, group: 'Admin', keywords: 'super admin organisations tenants subscriptions plans features mobile app activity automation registrations', superAdminOnly: true },
   { href: '/settings/appearance', label: 'Theme Studio', icon: Palette, group: 'Admin', keywords: 'appearance theme colours dark light density motion' },
-  { href: '/settings/forms', label: 'Form gallery', icon: FormInput, group: 'Admin', keywords: 'smart forms controls components date picker select design system' },
+  { href: '/settings/forms', label: 'Form gallery', icon: FormInput, group: 'Admin', keywords: 'smart forms controls components date picker select design system', superAdminOnly: true },
 ];
 
 export function isActive(pathname: string, href: string) {

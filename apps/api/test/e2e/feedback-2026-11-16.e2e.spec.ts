@@ -265,3 +265,62 @@ describe('Feedback 2026-11-16: vendor setup and report (e2e)', () => {
     expect(scores.vendors.find((v: { id: string }) => v.id === fcId).expense).toEqual({ USD: 3 });
   });
 });
+
+describe('Feedback 2026-11-16: survey library (e2e)', () => {
+  let app: INestApplication;
+  let prisma: PrismaClient;
+  let pm: ReturnType<typeof api>;
+  let viewer: ReturnType<typeof api>;
+  let other: ReturnType<typeof api>;
+
+  beforeAll(async () => {
+    ({ app, prisma } = await createApp());
+    await resetDb(prisma);
+    const a = await makeOrg(prisma, 'fb1116s');
+    const b = await makeOrg(prisma, 'fb1116t');
+    pm = api(app, await login(app, a.users.PROJECT_MANAGER.email));
+    viewer = api(app, await login(app, a.users.VIEWER.email));
+    other = api(app, await login(app, b.users.PROJECT_MANAGER.email));
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  const byKey = (list: { key: string }[], key: string) => list.find((s) => s.key === key) as { key: string; name: string; categories: string[]; questions: { id: string }[] };
+
+  it('has tobacco, decision maker and HCP sets, each with the categories it starts', async () => {
+    const sets = (await viewer.get('/question-templates/sets').expect(200)).body;
+    expect(byKey(sets, 'tobacco').questions.map((q) => q.id)).toEqual(expect.arrayContaining(['age', 'gender', 'nicotine_products']));
+    expect(byKey(sets, 'decision_makers').questions.map((q) => q.id)).toContain('decision_areas');
+    expect(byKey(sets, 'hcp').categories).toEqual(['Healthcare-Professional']);
+    expect(byKey(sets, 'b2b').categories).toEqual(['B2B']);
+    expect(byKey(sets, 'tobacco').categories).toEqual([]);
+  });
+
+  it('saves the categories a set is used for, keeps them when left out, and resets to the defaults', async () => {
+    const tobacco = byKey((await pm.get('/question-templates/sets').expect(200)).body, 'tobacco');
+    const extra = { id: 'heated_brand', type: 'text', text: 'Which heated tobacco brand do you use?', required: false, validation: {} };
+    await viewer.put('/question-templates/sets/tobacco', { name: tobacco.name, questions: tobacco.questions, categories: ['Tobacco'] }).expect(403);
+    await pm.put('/question-templates/sets/tobacco', { name: tobacco.name, questions: [...tobacco.questions, extra], categories: ['Tobacco', 'Tobacco', 'Consumer'] }).expect(200);
+    let mine = byKey((await pm.get('/question-templates/sets').expect(200)).body, 'tobacco');
+    expect(mine.categories).toEqual(['Tobacco', 'Consumer']);
+    expect(mine.questions.at(-1)?.id).toBe('heated_brand');
+    // Saving again without categories keeps them.
+    await pm.put('/question-templates/sets/tobacco', { name: 'Smokers', questions: mine.questions }).expect(200);
+    mine = byKey((await pm.get('/question-templates/sets').expect(200)).body, 'tobacco');
+    expect(mine).toMatchObject({ name: 'Smokers', categories: ['Tobacco', 'Consumer'] });
+    // A built-in set saved without categories keeps its defaults.
+    const hcp = byKey((await pm.get('/question-templates/sets').expect(200)).body, 'hcp');
+    await pm.put('/question-templates/sets/hcp', { name: 'HCP (ours)', questions: hcp.questions }).expect(200);
+    expect(byKey((await pm.get('/question-templates/sets').expect(200)).body, 'hcp').categories).toEqual(['Healthcare-Professional']);
+    // Other organisations are not affected; reset brings back the standard set.
+    expect(byKey((await other.get('/question-templates/sets').expect(200)).body, 'tobacco').categories).toEqual([]);
+    await pm.put('/question-templates/sets/tobacco', { name: 'x2', questions: mine.questions, categories: [''] }).expect(400);
+    await pm.delete('/question-templates/sets/tobacco').expect(200);
+    expect(byKey((await pm.get('/question-templates/sets').expect(200)).body, 'tobacco')).toMatchObject({ name: 'Tobacco and nicotine users', categories: [] });
+    // A custom set can list categories too.
+    const created = (await pm.put('/question-templates/sets/new', { name: 'Vapers 21+', questions: mine.questions, categories: ['Vaping'] }).expect(200)).body;
+    expect(byKey((await pm.get('/question-templates/sets').expect(200)).body, created.key).categories).toEqual(['Vaping']);
+  });
+});
