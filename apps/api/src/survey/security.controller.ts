@@ -30,9 +30,12 @@ const questionSetSchema = z
     name: z.string().trim().min(2, 'Use at least 2 characters').max(80),
     description: z.string().trim().max(300).nullable().optional(),
     questions: questionListSchema.refine((qs) => qs.length > 0, 'Add at least one question'),
+    /** Project categories that start with this set as their gate survey. */
+    categories: z.array(z.string().trim().min(1).max(100)).max(30).optional(),
   })
   .strict();
-const SET_KEY = /^(b2b|b2c|parents|teens|hc_consumer|hc_patient|hc_caregiver|custom-[a-z0-9]{6,32})$/;
+const SET_KEY = new RegExp(`^(${AUDIENCES.join('|')}|custom-[a-z0-9]{6,32})$`);
+const categoriesOf = (v: unknown, fallback: string[] = []): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : fallback);
 
 @Controller()
 export class SecurityController {
@@ -160,12 +163,12 @@ export class SecurityController {
       ...builtIn.map((b) => {
         const s = own(b.key);
         return s
-          ? { key: b.key, name: s.name, description: s.description ?? b.description, questions: questionsOf(s.questions), builtIn: true, edited: true, updatedAt: s.updatedAt, updatedBy: by(s.updatedById) }
+          ? { key: b.key, name: s.name, description: s.description ?? b.description, questions: questionsOf(s.questions), categories: categoriesOf(s.categories, b.categories), builtIn: true, edited: true, updatedAt: s.updatedAt, updatedBy: by(s.updatedById) }
           : { ...b, builtIn: true, edited: false, updatedAt: null, updatedBy: null };
       }),
       ...saved
         .filter((s) => s.key.startsWith('custom-'))
-        .map((s) => ({ key: s.key, name: s.name, description: s.description ?? '', questions: questionsOf(s.questions), builtIn: false, edited: true, updatedAt: s.updatedAt, updatedBy: by(s.updatedById) })),
+        .map((s) => ({ key: s.key, name: s.name, description: s.description ?? '', questions: questionsOf(s.questions), categories: categoriesOf(s.categories), builtIn: false, edited: true, updatedAt: s.updatedAt, updatedBy: by(s.updatedById) })),
     ];
   }
 
@@ -178,7 +181,14 @@ export class SecurityController {
     if (key.startsWith('custom-') && !(await this.prisma.questionSet.findFirst({ where: { organizationId: u.organizationId, key } })) && (await this.prisma.questionSet.count({ where: { organizationId: u.organizationId, key: { startsWith: 'custom-' } } })) >= 50) {
       throw new BadRequestException('You can keep up to 50 of your own question sets');
     }
-    const data = { name: body.name, description: body.description ?? null, questions: body.questions as unknown as Prisma.InputJsonValue, updatedById: u.id };
+    const data = {
+      name: body.name,
+      description: body.description ?? null,
+      questions: body.questions as unknown as Prisma.InputJsonValue,
+      // Leaving categories out keeps what the set had (a built-in set keeps its defaults).
+      ...(body.categories ? { categories: [...new Set(body.categories)] } : {}),
+      updatedById: u.id,
+    };
     await this.prisma.questionSet.upsert({ where: { organizationId_key: { organizationId: u.organizationId, key } }, create: { organizationId: u.organizationId, key, ...data }, update: data });
     await this.audit.record({ organizationId: u.organizationId, actorId: u.id, action: 'question-set.save', entityType: 'QuestionSet', entityId: key, detail: { name: body.name, questions: body.questions.length } });
     return { key };

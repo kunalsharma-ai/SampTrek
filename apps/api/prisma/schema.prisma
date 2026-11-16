@@ -2305,6 +2305,8 @@ model QuestionSet {
   name           String
   description    String?
   questions      Json
+  /// Project categories that start with this set as their gate survey (string array). Null keeps a built-in set's defaults.
+  categories     Json?
   updatedById    String?
   updatedAt      DateTime     @updatedAt
   createdAt      DateTime     @default(now())
