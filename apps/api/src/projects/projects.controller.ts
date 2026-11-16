@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Module, Param, ParseIntPipe, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Module, Param, ParseIntPipe, Patch, Post, Put, Query } from '@nestjs/common';
+import { securityOverridesSchema } from '../survey/vendor-security';
 import { ProjectHistoryService } from './project-history';
 import { ProjectDraftsController, ProjectTemplatesController } from './project-templates';
 import { z } from 'zod';
@@ -21,6 +22,8 @@ import {
   updateProjectSchema,
 } from './projects.schemas';
 import { ProjectsService } from './projects.service';
+
+const vendorSecurityBody = z.object({ overrides: securityOverridesSchema });
 
 @Controller('projects')
 export class ProjectsController {
@@ -98,6 +101,21 @@ export class ProjectsController {
     @Body(new ZodPipe(allocationSchema)) body: z.infer<typeof allocationSchema>,
   ) {
     return this.projects.addAllocation(u, id, countryId, body);
+  }
+
+  /**
+   * Security switches for one vendor in this project, for all its markets (feedback 2026-11-16):
+   * e.g. switch duplicate detection or the gate survey off for just this vendor. {} = follow the project.
+   */
+  @Put(':id/vendors/:vendorId/security')
+  @Roles(...EDITORS)
+  setVendorSecurity(
+    @CurrentUser() u: AuthUser,
+    @Param('id') id: string,
+    @Param('vendorId') vendorId: string,
+    @Body(new ZodPipe(vendorSecurityBody)) body: z.infer<typeof vendorSecurityBody>,
+  ) {
+    return this.projects.setVendorSecurity(u, id, vendorId, body.overrides);
   }
 
   @Patch(':id/countries/:countryId/allocations/:allocationId')

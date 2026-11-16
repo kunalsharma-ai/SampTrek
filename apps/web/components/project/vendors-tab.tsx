@@ -1,6 +1,6 @@
 'use client';
 import clsx from 'clsx';
-import { AlertTriangle, Check, Copy, MessageSquareQuote, Pause, Pencil, Play, Plus, Save, Sparkles } from 'lucide-react';
+import { AlertTriangle, Check, Copy, MessageSquareQuote, Pause, Pencil, Play, Plus, Save, ShieldCheck, Sparkles } from 'lucide-react';
 import { QuotesPanel } from './quotes-panel';
 import { VendorSuggestions } from './vendor-suggestions';
 import { VendorTitle } from './vendor-title';
@@ -10,7 +10,8 @@ import { PartyLogo } from '@/components/parties/logo';
 import { maskEmail } from '@/lib/mask';
 import { PartyPicker, type PartyOpt } from '@/components/parties/quick-add';
 import { Empty, ErrorBox, Field, Progress, Section, StatusChip, money } from '@/components/ui';
-import { get, patch, post } from '@/lib/api';
+import { api, get, patch, post } from '@/lib/api';
+import { SecurityOverridesEditor, describeOverrides } from '@/components/vendors/security-overrides';
 import { countryName, flag } from '@/lib/countries';
 import type { Option } from '@/lib/types';
 import { withPayoutCheck } from './payout';
@@ -46,6 +47,7 @@ export function VendorsTab({ project, editable, reload }: { project: ProjectDeta
   const [form, setForm] = useState(EMPTY_FORM);
   const [editing, setEditing] = useState<{ id: string; cpi: string; targetCompletes: string; uidParam: string } | null>(null);
   // By vendor is the default; a project with no vendor yet opens by market, where vendors are added.
+  const [securityFor, setSecurityFor] = useState<string | null>(null);
   const [view, setView] = useState<'market' | 'vendor'>(() => (project.countries.some((c) => c.allocations.length) ? 'vendor' : 'market'));
   const [error, setError] = useState<unknown>(null);
 
@@ -264,7 +266,18 @@ export function VendorsTab({ project, editable, reload }: { project: ProjectDeta
           <Empty>No vendors yet. Switch to “By market” to add them.</Empty>
         ) : (
           byVendor.map(({ vendor, rows }) => (
-            <Section key={vendor.id} help="project.vendorCard" title={<span>{vendor.name} <span className="font-normal text-muted">· {vendor.code} · {rows.length} {rows.length === 1 ? 'market' : 'markets'}</span></span>} actions={editable && rows.length > 1 && <PayoutEverywhere currency={rows[0].c.currency} onApply={(cpi) => payoutEverywhere(vendor.id, cpi)} />}>
+            <Section
+              key={vendor.id}
+              help="project.vendorCard"
+              title={<span>{vendor.name} <span className="font-normal text-muted">· {vendor.code} · {rows.length} {rows.length === 1 ? 'market' : 'markets'}</span></span>}
+              actions={
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <button className={clsx('btn-ghost px-2.5 py-1.5 text-xs', Object.keys(rows[0].a.securityOverrides ?? {}).length > 0 && 'text-brand')} aria-expanded={securityFor === vendor.id} onClick={() => setSecurityFor(securityFor === vendor.id ? null : vendor.id)}><ShieldCheck className="h-3.5 w-3.5" /> Security</button>
+                  {editable && rows.length > 1 && <PayoutEverywhere currency={rows[0].c.currency} onApply={(cpi) => payoutEverywhere(vendor.id, cpi)} />}
+                </div>
+              }
+            >
+              {securityFor === vendor.id && <VendorProjectSecurity project={project} vendor={vendor} current={rows[0].a.securityOverrides ?? {}} editable={editable} onSaved={() => { setSecurityFor(null); reload(); }} />}
               <div className="-m-5 overflow-x-auto">
                 <table className="w-full min-w-[720px]">
                   <thead className="border-b border-line bg-sunken/60"><tr><th className="th">Market</th><th className="th">Status</th><th className="th">Completes</th><th className="th">Client CPI</th><th className="th">Payout</th><th className="th">Links</th></tr></thead>
@@ -411,6 +424,49 @@ function PayoutEverywhere({ currency, onApply }: { currency: string; onApply: (c
     <div className="flex items-center gap-1.5">
       <input className="input w-28 px-2 py-1 text-xs" type="number" step="0.01" min={0} placeholder={`Payout ${currency}`} aria-label="Payout for every market" value={v} onChange={(e) => setV(e.target.value)} />
       <button className="btn-ghost px-2.5 py-1 text-xs" disabled={v === ''} onClick={() => { onApply(Number(v)); setV(''); }}>Apply to all markets</button>
+    </div>
+  );
+}
+
+/**
+ * Security for one vendor in this project, for all its markets: e.g. no duplicate detection or no
+ * device limits for this vendor only. Wins over the vendor page and the project (feedback 2026-11-16).
+ */
+function VendorProjectSecurity({ project, vendor, current, editable, onSaved }: { project: ProjectDetail; vendor: { id: string; name: string; securityOverrides?: Record<string, boolean> | null }; current: Record<string, boolean>; editable: boolean; onSaved: () => void }) {
+  const [value, setValue] = useState<Record<string, boolean>>(current);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+  const vendorWide = vendor.securityOverrides ?? {};
+  return (
+    <div className="mb-8 rounded-lg border border-line bg-sunken/40 p-4">
+      <p className="mb-3 text-sm text-muted">
+        Security for {vendor.name} in this project, in all its markets. Leave a switch on &quot;Same as&quot; to follow {Object.keys(vendorWide).length ? `the vendor's own settings (${describeOverrides(vendorWide)}), then the project` : 'the project'}.
+      </p>
+      <SecurityOverridesEditor value={value} onChange={setValue} disabled={!editable} projectValues={{ ...(project.security as Record<string, boolean>), ...vendorWide }} />
+      <ErrorBox error={error} />
+      {editable && (
+        <div className="mt-3 flex gap-2">
+          <button
+            className="btn-primary"
+            disabled={busy}
+            onClick={async () => {
+              setBusy(true);
+              setError(null);
+              try {
+                await api(`/projects/${project.id}/vendors/${vendor.id}/security`, { method: 'PUT', json: { overrides: value } });
+                onSaved();
+              } catch (e) {
+                setError(e);
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            {busy ? 'Saving…' : `Save for ${vendor.name}`}
+          </button>
+          {Object.keys(value).length > 0 && <button className="btn-ghost" onClick={() => setValue({})}>Clear (same as project)</button>}
+        </div>
+      )}
     </div>
   );
 }

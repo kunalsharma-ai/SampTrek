@@ -1,6 +1,6 @@
 'use client';
 import clsx from 'clsx';
-import { AlertTriangle, ClipboardPaste, FileStack, LayoutTemplate, Monitor, Plus, Search, Smartphone, Sparkles, Tablet, Trash2, Trophy, Users } from 'lucide-react';
+import { AlertTriangle, ClipboardPaste, FileStack, LayoutTemplate, Plus, Search, Sparkles, Trash2, Trophy, Users } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
@@ -10,7 +10,7 @@ import { AddableSelect, loadCustomOptions } from '@/components/form/option-selec
 import { BulkFill } from '@/components/project/bulk-fill';
 import { cleanQuestion, QuestionBuilder, questionProblems } from '@/components/project/question-builder';
 import { BriefBanner, BriefReader, useBriefAvailability, type BriefInfo } from '@/components/project/brief-reader';
-import { MobileOsPicker, devicesProblem, withOs, type DeviceSettings } from '@/components/project/mobile-os';
+import { DevicePicker, devicesProblem, withOs, type DeviceSettings } from '@/components/project/mobile-os';
 import { ErrorBox, Field, Loading, PageHeader, Section, Toggle } from '@/components/ui';
 import { api, get, post } from '@/lib/api';
 import { surveyLinkProblem } from '@/lib/survey-link';
@@ -752,12 +752,7 @@ function CreateProjectPage() {
           </Section>
           <Section title="Devices">
             <div className="space-y-3">
-              {([['desktop', Monitor], ['mobile', Smartphone], ['tablet', Tablet]] as const).map(([k, Icon]) => (
-                <div key={k} className="flex items-center justify-between text-sm">
-                  <span className="flex items-center gap-2"><Icon className="h-4 w-4 text-muted" /> {k.charAt(0).toUpperCase() + k.slice(1)}</span>
-                  <Toggle label={k} checked={devices[k]} onChange={(v) => setDevices({ ...devices, [k]: v })} />
-                </div>
-              )).flatMap((row, i) => (i === 1 ? [row, <MobileOsPicker key="os" devices={devices} onChange={setDevices} />] : [row]))}
+              <DevicePicker devices={devices} onChange={setDevices} />
               {devicesProblem(devices) && <p className="text-xs text-warn">{devicesProblem(devices)}</p>}
             </div>
           </Section>

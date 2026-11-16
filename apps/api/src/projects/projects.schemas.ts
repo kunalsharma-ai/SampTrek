@@ -29,14 +29,23 @@ export const securitySchema = z
   .strict();
 
 /**
- * Devices allowed at entry. `android` and `ios` narrow Mobile to those phone systems; with both on,
- * every phone is allowed (including other systems), as before.
+ * Devices allowed at entry, and the operating systems allowed on each: Windows / Mac / Linux / other
+ * on desktops, Android / iOS / other on phones (android, ios, mobileOther) and on tablets.
+ * mobileOther may be missing on older projects: other phones are then allowed only with both Android and iOS.
  */
+const on = () => z.boolean().default(true);
 export const devicesSchema = z
-  .object({ desktop: z.boolean().default(true), mobile: z.boolean().default(true), tablet: z.boolean().default(true), android: z.boolean().default(true), ios: z.boolean().default(true) })
+  .object({
+    desktop: on(), mobile: on(), tablet: on(),
+    android: on(), ios: on(), mobileOther: z.boolean().optional(),
+    windows: on(), mac: on(), linux: on(), desktopOther: on(),
+    tabletAndroid: on(), tabletIos: on(), tabletOther: on(),
+  })
   .strict()
   .refine((d) => d.desktop || d.mobile || d.tablet, 'Allow at least one device')
-  .refine((d) => !d.mobile || d.android || d.ios, 'Choose Android, iOS or both for mobile');
+  .refine((d) => !d.mobile || d.android || d.ios || d.mobileOther, 'Choose at least one phone system (Android, iOS or other)')
+  .refine((d) => !d.desktop || d.windows || d.mac || d.linux || d.desktopOther, 'Choose at least one desktop system (Windows, Mac, Linux or other)')
+  .refine((d) => !d.tablet || d.tabletAndroid || d.tabletIos || d.tabletOther, 'Choose at least one tablet system (Android, iOS or other)');
 
 /**
  * The client survey link must say where our UID goes ({uid}, or the older {session_token}), so every
@@ -107,7 +116,7 @@ export const createProjectSchema = z.object({
   salesPersonId: z.string().optional(),
   projectManagerId: z.string().optional(),
   description: z.string().max(20000).optional(),
-  devices: devicesSchema.default({ desktop: true, mobile: true, tablet: true, android: true, ios: true }),
+  devices: devicesSchema.default({ desktop: true, mobile: true, tablet: true, android: true, ios: true, windows: true, mac: true, linux: true, desktopOther: true, tabletAndroid: true, tabletIos: true, tabletOther: true }),
   security: securitySchema.default({} as never),
   redirectMode: z.enum(REDIRECT_MODES).default('HYBRID'),
   redirectConfig: redirectConfigSchema.optional(),

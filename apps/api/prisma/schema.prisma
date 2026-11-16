@@ -515,6 +515,10 @@ model Vendor {
   /// The vendor's own redirect URL per outcome status ({ COMPLETE: "https://...", ... }); macros allowed.
   /// Project rules use them through the {vendor_redirect} macro (docs/CLIENTS_VENDORS_EDITING.md).
   redirectUrls           Json?
+  /// Security switches that differ for this vendor's respondents in every project, e.g.
+  /// { "duplicateDetection": false }. They win over the project; a project's own setting for this
+  /// vendor (VendorAllocation.securityOverrides) wins over them. "deviceLimits": false lets every device in.
+  securityOverrides      Json?
   website                String?
   contactName            String?
   contactEmail           String?
@@ -754,6 +758,9 @@ model VendorAllocation {
   /// When true the shared live entry link is refused and respondents can only enter through
   /// one-time unique links (docs/UNIQUE_LINKS.md). The test link keeps working.
   uniqueLinksOnly     Boolean          @default(false)
+  /// Security switches for this vendor in this project (set for all its markets at once). They win
+  /// over the vendor's own overrides and the project settings. Same keys as Vendor.securityOverrides.
+  securityOverrides   Json?
   createdAt           DateTime         @default(now())
   updatedAt           DateTime         @updatedAt
 

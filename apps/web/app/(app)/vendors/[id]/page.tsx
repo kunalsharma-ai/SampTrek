@@ -11,6 +11,7 @@ import { LogoUpload, PartyLogo } from '@/components/parties/logo';
 import { PART_LABELS, PartBar, ScoreBadge, WEIGHTS, type Grade, type ScoreParts, type VendorStats } from '@/components/vendors/score';
 import { api, get, patch } from '@/lib/api';
 import { VendorForm, type VendorDetail } from '@/components/parties/vendor-form';
+import { SecurityOverridesEditor, describeOverrides } from '@/components/vendors/security-overrides';
 import { VENDOR_FALLBACK, VENDOR_REDIRECTS } from '@/lib/contact-rules';
 import { COUNTRIES, countryName, flag } from '@/lib/countries';
 
@@ -188,6 +189,8 @@ export default function VendorScorecard() {
         </Section>
       )}
 
+      {detail && <VendorSecurity key={JSON.stringify(detail.securityOverrides ?? {})} detail={detail} editable={canEdit(me)} onSave={saveDetail} />}
+
       <Section
         title="Markets and capacity"
         className="mb-6"
@@ -271,5 +274,30 @@ export default function VendorScorecard() {
         )}
       </Section>
     </>
+  );
+}
+
+/**
+ * Security that differs for this vendor in every project, e.g. duplicate detection off or a tighter
+ * gate (feedback 2026-11-16). A project can still set its own value for the vendor on Vendors & links.
+ */
+function VendorSecurity({ detail, editable, onSave }: { detail: VendorDetail; editable: boolean; onSave: (body: Record<string, unknown>) => Promise<void> }) {
+  const [value, setValue] = useState<Record<string, boolean>>((detail.securityOverrides ?? {}) as Record<string, boolean>);
+  const [busy, setBusy] = useState(false);
+  const dirty = JSON.stringify(value) !== JSON.stringify(detail.securityOverrides ?? {});
+  return (
+    <Section title="Security for this vendor" help="vendor.security" className="mb-6">
+      <p className="mb-3 text-sm text-muted">
+        Switches set here apply to this vendor&apos;s respondents in every project, even when the project has them the other way: for example, duplicate detection off for this vendor while it stays on for the others.
+        A project can still set its own value for this vendor (Vendors &amp; links tab → Security). Now: <span className="text-ink">{describeOverrides(detail.securityOverrides)}</span>.
+      </p>
+      <SecurityOverridesEditor value={value} onChange={setValue} disabled={!editable} base="each project" />
+      {editable && (
+        <div className="mt-4 flex gap-2">
+          <button className="btn-primary" disabled={!dirty || busy} onClick={async () => { setBusy(true); try { await onSave({ securityOverrides: Object.keys(value).length ? value : null }); } catch { /* shown above */ } finally { setBusy(false); } }}>{busy ? 'Saving…' : 'Save security'}</button>
+          {dirty && <button className="btn-ghost" onClick={() => setValue((detail.securityOverrides ?? {}) as Record<string, boolean>)}>Undo</button>}
+        </div>
+      )}
+    </Section>
   );
 }
