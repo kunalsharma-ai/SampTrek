@@ -21,7 +21,7 @@ import { AiProvider, AiProviderError, Http, Message, Part } from './provider';
 import { Display, toolByName, ToolContext, ToolError, toolsFor } from './tools';
 import { aggregate, countIf, mdate, numOut } from '../prisma/agg';
 
-const NOT_SET_UP = 'The AI copilot is not set up yet (GEMINI_API_KEY is missing). An admin can add a Gemini API key in Settings → Integrations.';
+const NOT_SET_UP = 'The AI copilot is not set up yet. An admin can add a Gemini API key in Settings → Integrations.';
 
 // ───────────── Settings ─────────────
 

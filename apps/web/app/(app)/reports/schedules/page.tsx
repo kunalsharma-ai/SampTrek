@@ -106,7 +106,7 @@ export default function SchedulesPage() {
               {list.mail.configured ? (
                 <div><div className="font-medium">Email is set up</div><div className="text-muted">Sent from {list.mail.from ?? 'the configured address'}{list.mail.host ? ` through ${list.mail.host}` : ''}.</div></div>
               ) : (
-                <div><div className="font-medium">Email is not set up yet</div><div className="text-muted">Schedules are saved, but nothing is sent until the server has the Zoho Mail settings (SMTP_USER, SMTP_PASS, MAIL_FROM). See docs/SCHEDULED_REPORTS.md.</div></div>
+                <div><div className="font-medium">Email is not set up yet</div><div className="text-muted">Schedules are saved, but nothing is sent until an admin sets up Zoho Mail in Settings → Integrations → Email.</div></div>
               )}
             </div>
             {me?.user.role === 'ADMIN' && <button className="btn-ghost" disabled={busy} onClick={testEmail}><Send className="h-4 w-4" />Send me a test email</button>}

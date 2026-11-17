@@ -25,7 +25,7 @@ export class MailNotConfigured extends Error {
 
 /**
  * Sends email through SMTP (Zoho Mail by default) with the organisation's settings from
- * Settings → Integrations, or the server's SMTP_* env when it has none. `transport` can be swapped in tests.
+ * Settings → Integrations (or the server owner's shared default when it has none). `transport` can be swapped in tests.
  */
 @Injectable()
 export class MailService {

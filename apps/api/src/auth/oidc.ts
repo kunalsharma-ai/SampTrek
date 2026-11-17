@@ -18,7 +18,7 @@ export const ZOHO_ACCOUNTS_HOSTS = ['accounts.zoho.com', 'accounts.zoho.in', 'ac
 
 export interface ProviderSettings { clientId: string; clientSecret: string; discoveryUrl: string; scope: string; extraAuthParams: Record<string, string> }
 
-export function providerSettings(p: SsoProvider, env = process.env): ProviderSettings | null {
+export function providerSettings(p: SsoProvider, env: Record<string, string | undefined>): ProviderSettings | null {
   const up = p.toUpperCase();
   const clientId = env[`${up}_CLIENT_ID`]?.trim();
   const clientSecret = env[`${up}_CLIENT_SECRET`];

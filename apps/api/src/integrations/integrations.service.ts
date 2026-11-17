@@ -1,12 +1,15 @@
 /**
- * Settings → Integrations (docs/INTEGRATIONS.md). Admins set up email, sign-in, AI, accounting and
- * SampBidx in the app; nothing has to be edited on the server. Secrets are AES-256-GCM encrypted at
- * rest and never sent back to the browser. When an organisation has not saved an integration, the
- * old environment variables still apply, so existing servers keep working.
+ * Settings → Integrations (docs/INTEGRATIONS.md). Admins set up email, sign-in, AI, accounting,
+ * payments, backups and SampBidx in the app; nothing has to be edited on the server. Every key lives
+ * in the database: secrets are AES-256-GCM encrypted at rest (master key MFA_ENCRYPTION_KEY) and never
+ * sent back to the browser. Only the database address and the master keys stay in .env.
+ *
+ * Servers set up before this still have keys in .env: on start, `importFromEnv` copies each one into
+ * the database once (for the organisation that runs the server), and from then on .env is not read.
  */
 import { promises as dns } from 'dns';
 import { isIP } from 'net';
-import { BadRequestException, Body, Controller, Delete, ForbiddenException, Get, Global, HttpCode, Injectable, Logger, Module, NotFoundException, Param, Post, Put } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, ForbiddenException, Get, Global, HttpCode, Injectable, Logger, Module, NotFoundException, OnApplicationBootstrap, Param, Post, Put } from '@nestjs/common';
 import { IntegrationSetting } from '@prisma/client';
 import * as nodemailer from 'nodemailer';
 import { z } from 'zod';
@@ -23,9 +26,10 @@ import { dumpToolVersion } from '../backups/backup-core';
 import { BackupStorage, s3From, storageFrom } from '../backups/storage';
 import { parseCidrList } from '../survey/fraud';
 import { sampledgeHeaders, sampleonFrom, setSampleonSource } from '../sampleon/sampleon-config';
-import { BOOTSTRAP_ENV, CATALOG, FieldDef, IntegrationKind, isKind, isPaymentKind, isServerOnlyKind, KIND, KindDef } from './catalog';
+import { BOOTSTRAP_ENV, CATALOG, FieldDef, IntegrationKind, isKind, isPaymentKind, isServerOnlyKind, isShareableKind, KIND, KindDef } from './catalog';
 
-export type Source = 'app' | 'env' | null;
+/** app = saved by this organisation (or the server owner, for platform settings); shared = the server owner's default. */
+export type Source = 'app' | 'shared' | null;
 export interface Resolved { source: Source; env: EnvMap; row: IntegrationSetting | null }
 export interface TestResult { ok: boolean; message: string }
 
@@ -55,10 +59,14 @@ export function isPrivateAddress(ip: string): boolean {
 }
 
 const line = z.string().max(2000).regex(/^[^\r\n]*$/, 'Use one line');
-export const saveSchema = z.object({ values: z.record(z.string(), line.nullable()).default({}) });
+export const saveSchema = z.object({
+  values: z.record(z.string(), line.nullable()).default({}),
+  /** Server owner only: also use this setting for organisations that have not set up their own. */
+  serverDefault: z.boolean().optional(),
+});
 
 @Injectable()
-export class IntegrationsService {
+export class IntegrationsService implements OnApplicationBootstrap {
   private readonly log = new Logger(IntegrationsService.name);
   /** Swappable in tests. */
   http: IntegrationsHttp = (url, init) => fetch(url, { ...init, signal: AbortSignal.timeout(15_000) });
@@ -80,8 +88,73 @@ export class IntegrationsService {
     private readonly audit: AuditService,
     private readonly entitlements: EntitlementsService,
   ) {
-    // The SampAudience connection is read through here, so the one saved in Settings wins over the env.
+    // The SampAudience connection is read through here, from Settings → Integrations.
     setSampleonSource(async () => (await this.resolve(null, 'sampleon')).env);
+  }
+
+  async onApplicationBootstrap() {
+    if (process.env.NODE_ENV === 'test') return; // the tests call importFromEnv themselves
+    await this.importFromEnv().catch((e: Error) => this.log.error(`Could not copy .env keys into Settings → Integrations: ${e.message}`));
+  }
+
+  // ───────────── One-time copy of old .env keys into the database ─────────────
+
+  /**
+   * Copies every integration still configured in the server env into Settings → Integrations, once
+   * per kind, for the organisation that runs the server (Zoho Books and Tally: the organisation their
+   * *_TENANT names). Email, AI and IP reputation applied to every organisation from .env, so the copy
+   * is marked as the server default to keep that. A setting already saved in the app is never
+   * overwritten. After this the env values are ignored; a warning lists the lines to delete.
+   */
+  async importFromEnv(env: EnvMap = process.env): Promise<{ kind: IntegrationKind; organizationId: string; keys: string[] }[]> {
+    const owner = await this.ownerId();
+    if (!owner) return []; // no organisation yet: runs again on the next start
+    const done = new Map((await this.prisma.envImport.findMany()).map((r) => [r.id, r]));
+    const out: { kind: IntegrationKind; organizationId: string; keys: string[] }[] = [];
+    const leftovers: string[] = [];
+    for (const def of CATALOG) {
+      const keys = def.fields.filter((f) => !f.transient && env[f.key]?.trim()).map((f) => f.key);
+      if (!configuredIn(def.kind, env)) continue;
+      if (done.has(def.kind)) {
+        leftovers.push(...keys);
+        continue;
+      }
+      let holder = owner;
+      if (def.kind === 'zoho_books' || def.kind === 'tally') {
+        const slug = env[def.kind === 'tally' ? 'TALLY_TENANT' : 'ZOHO_BOOKS_TENANT']?.trim();
+        const o = slug ? await this.prisma.organization.findUnique({ where: { slug }, select: { id: true } }) : null;
+        if (!o) {
+          this.log.warn(`${def.label} is set in .env for organisation "${slug}", which does not exist. Set it up in Settings → Integrations instead.`);
+          continue;
+        }
+        holder = o.id;
+      }
+      const existing = await this.prisma.integrationSetting.findUnique({ where: { organizationId_kind: { organizationId: holder, kind: def.kind } } });
+      if (!existing) {
+        const values: Record<string, string> = {};
+        const secrets: Record<string, string> = {};
+        for (const k of keys) {
+          const f = def.fields.find((x) => x.key === k)!;
+          (f.type === 'secret' ? secrets : values)[k] = env[k]!.trim();
+        }
+        await this.prisma.integrationSetting.create({
+          data: {
+            organizationId: holder,
+            kind: def.kind,
+            values,
+            secrets: Object.keys(secrets).length ? encryptSecret(JSON.stringify(secrets), secretKey()) : null,
+            serverDefault: isShareableKind(def.kind),
+          },
+        });
+        await this.audit.record({ organizationId: holder, action: 'integration.imported', entityType: 'IntegrationSetting', entityId: def.kind, detail: { kind: def.kind, keys } });
+        out.push({ kind: def.kind, organizationId: holder, keys });
+        this.log.warn(`Copied ${def.label} from .env into Settings → Integrations (database). .env is no longer read for it.`);
+      }
+      await this.prisma.envImport.create({ data: { id: def.kind, organizationId: holder, keys } });
+      leftovers.push(...keys);
+    }
+    if (leftovers.length) this.log.warn(`These .env lines are no longer used (the keys are kept in the database now) and can be deleted: ${leftovers.join(', ')}`);
+    return out;
   }
 
   /** The Super Admin can take an integration away from an organisation (docs/SUPER_ADMIN.md). */
@@ -133,7 +206,13 @@ export class IntegrationsService {
       if (kind === 'bidzo' && !env.SAMPBIDX_URL?.trim() && env.BIDZO_URL?.trim()) env.SAMPBIDX_URL = env.BIDZO_URL;
       return { source: 'app', env, row };
     }
-    return { source: configuredIn(kind, process.env) ? 'env' : null, env: process.env, row: null };
+    // Email, AI, IP reputation and SampBidx: the server owner's setting when it is shared as the default.
+    if (def.scope === 'org' && isShareableKind(kind)) {
+      const owner = await this.ownerId();
+      const shared = owner && owner !== holder ? await this.prisma.integrationSetting.findFirst({ where: { organizationId: owner, kind, serverDefault: true } }) : null;
+      if (shared) return { source: 'shared', env: { ...this.defaults(def), ...this.open(shared) }, row: null };
+    }
+    return { source: null, env: {}, row: null };
   }
 
   async smtp(org: string): Promise<SmtpConfig | null> {
@@ -145,7 +224,7 @@ export class IntegrationsService {
   async ai(org: string): Promise<AiConfig | null> {
     return aiFrom({ GEMINI_API_URL: process.env.GEMINI_API_URL, ...(await this.resolve(org, 'gemini')).env });
   }
-  /** Zoho Books for this organisation, or null when it is not set up (or the env one belongs to another). */
+  /** Zoho Books for this organisation, or null when it is not set up. */
   async zohoBooks(org: string): Promise<{ config: ZohoBooksConfig | null; missing: string[]; otherTenant: boolean; source: Source }> {
     const r = await this.resolve(org, 'zoho_books');
     const c = zohoBooksFrom({ ...urlOverrides('ZOHO_BOOKS_'), ...r.env });
@@ -157,19 +236,13 @@ export class IntegrationsService {
   /** Organisations that may run Zoho Books on a schedule. */
   async zohoBooksOrgs(): Promise<string[]> {
     const rows = await this.prisma.integrationSetting.findMany({ where: { kind: 'zoho_books' }, select: { organizationId: true } });
-    const ids = new Set(rows.map((r) => r.organizationId));
-    const envTenant = config.zohoBooks?.tenant;
-    if (envTenant) {
-      const o = await this.prisma.organization.findUnique({ where: { slug: envTenant }, select: { id: true } });
-      if (o) ids.add(o.id);
-    }
-    return [...ids];
+    return [...new Set(rows.map((r) => r.organizationId))];
   }
   async ledgerApp<P extends 'xero' | 'quickbooks'>(p: P): Promise<NonNullable<ReturnType<typeof ledgersFrom>[P]> | null> {
     const r = await this.resolve(null, p);
     return (ledgersFrom({ ...urlOverrides(p === 'xero' ? 'XERO_' : 'QUICKBOOKS_'), ...r.env })[p] ?? null) as NonNullable<ReturnType<typeof ledgersFrom>[P]> | null;
   }
-  /** Tally for this organisation: a saved address, or the env one when TALLY_TENANT is this organisation. */
+  /** Tally for this organisation (saved by it; bound to its slug). */
   async tally(org: string): Promise<{ config: { url: string; tenant: string } | null; otherTenant: boolean; configured: boolean }> {
     const r = await this.resolve(org, 'tally');
     const t = ledgersFrom(r.env).tally;
@@ -179,13 +252,7 @@ export class IntegrationsService {
   }
   async tallyOrgs(): Promise<string[]> {
     const rows = await this.prisma.integrationSetting.findMany({ where: { kind: 'tally' }, select: { organizationId: true } });
-    const ids = new Set(rows.map((r) => r.organizationId));
-    const envTenant = config.ledgers.tally?.tenant;
-    if (envTenant) {
-      const o = await this.prisma.organization.findUnique({ where: { slug: envTenant }, select: { id: true } });
-      if (o) ids.add(o.id);
-    }
-    return [...ids];
+    return [...new Set(rows.map((r) => r.organizationId))];
   }
   /** Where "New bid" opens SampBidx (integration kind stays `bidzo`, see docs/SAMPBIDX_INTEGRATION.md). */
   async sampbidxUrl(org: string): Promise<string | null> {
@@ -193,7 +260,6 @@ export class IntegrationsService {
     return r.source === 'app' ? r.env.SAMPBIDX_URL?.trim() || null : null;
   }
 
-  /** Push to the phone app: on when saved as On here, or EXPO_PUSH=on in the server env. */
   /** Backup storage (docs/BACKUPS.md); null when it has not been chosen. */
   async backupStorage(): Promise<{ storage: BackupStorage; passphrase: string | null; source: Source; target: string } | null> {
     const r = await this.resolve(null, 'backup_storage');
@@ -201,6 +267,7 @@ export class IntegrationsService {
     return { storage: storageFrom(r.env), passphrase: r.env.BACKUP_PASSPHRASE?.trim() || null, source: r.source, target: r.env.BACKUP_TARGET!.trim() };
   }
 
+  /** Push to the phone app: on when saved as On here. */
   async push(): Promise<{ enabled: boolean; accessToken: string | null }> {
     const r = await this.resolve(null, 'push');
     return { enabled: (r.env.EXPO_PUSH ?? '').trim() === 'on', accessToken: r.env.EXPO_ACCESS_TOKEN?.trim() || null };
@@ -239,16 +306,13 @@ export class IntegrationsService {
       const r = await this.resolve(u.organizationId, def.kind);
       const configured = configuredIn(def.kind, r.env);
       let detail: string | null = null;
-      let state: 'connected' | 'env' | 'off' | 'other' = r.source === 'app' && configured ? 'connected' : r.source === 'env' ? 'env' : 'off';
+      let state: 'connected' | 'shared' | 'off' | 'other' = r.source === 'app' && configured ? 'connected' : r.source === 'shared' && configured ? 'shared' : 'off';
       if (def.kind === 'zoho_books') {
         const z = await this.zohoBooks(u.organizationId);
-        if (z.otherTenant) { state = 'other'; detail = 'The server settings for Zoho Books belong to another organisation. Save your own here.'; }
-      }
-      if (def.kind === 'tally') {
-        const t = await this.tally(u.organizationId);
-        if (t.otherTenant) { state = 'other'; detail = 'The server settings for Tally belong to another organisation.'; }
+        if (z.otherTenant) { state = 'other'; detail = 'These Zoho Books settings belong to another organisation. Save your own here.'; }
       }
       if (r.source === 'app' && !configured) detail = 'Saved, but some required fields are empty.';
+      if (state === 'shared') detail = 'Using the default set up by the organisation that runs this server. Save your own to replace it.';
       const by = r.row?.updatedById;
       if (by && !users.has(by)) users.set(by, (await this.prisma.user.findUnique({ where: { id: by }, select: { name: true } }))?.name ?? '');
       const redirectUri = this.redirectUri(def.kind);
@@ -264,6 +328,9 @@ export class IntegrationsService {
         redirectUri,
         editable,
         managedByServerOwner: (def.scope === 'platform' || !!def.ownerOnly) && !owner,
+        // The server owner can share its email, AI, IP reputation and SampBidx settings with every organisation.
+        shareable: owner && def.scope === 'org' && isShareableKind(def.kind),
+        serverDefault: owner && r.source === 'app' ? !!r.row?.serverDefault : false,
         status: {
           state,
           source: r.source,
@@ -275,7 +342,7 @@ export class IntegrationsService {
           lastTestMessage: r.row?.lastTestMessage ?? null,
         },
         values: showValues ? this.visible(def, r) : {},
-        secretsSet: showValues ? Object.fromEntries(def.fields.filter((f) => f.type === 'secret' && !f.transient).map((f) => [f.key, !!r.env[f.key]?.trim()])) : {},
+        secretsSet: showValues && r.source === 'app' ? Object.fromEntries(def.fields.filter((f) => f.type === 'secret' && !f.transient).map((f) => [f.key, !!r.env[f.key]?.trim()])) : {},
       });
     }
     return {
@@ -286,9 +353,9 @@ export class IntegrationsService {
     };
   }
 
-  /** Non-secret values. For server (env) settings, shown so admins can copy them across. */
+  /** Non-secret values of this organisation's own setting (a shared default is not shown to other organisations). */
   private visible(def: KindDef, r: Resolved): Record<string, string> {
-    if (!r.source) return {};
+    if (r.source !== 'app') return {};
     return Object.fromEntries(def.fields.filter((f) => f.type !== 'secret').map((f) => [f.key, r.env[f.key]?.trim() ?? f.default ?? '']));
   }
 
@@ -357,14 +424,19 @@ export class IntegrationsService {
     if (kind === 'backup_storage' && values.BACKUP_S3_BUCKET && !/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/.test(values.BACKUP_S3_BUCKET)) throw new BadRequestException('Bucket name: use 3–63 lowercase letters, digits, dots or -');
     if (missing.length) throw new BadRequestException(`Fill in: ${missing.join(', ')}`);
     const sealed = Object.keys(secrets).length ? encryptSecret(JSON.stringify(secrets), secretKey()) : null;
+    let serverDefault = existing?.serverDefault ?? false;
+    if (body.serverDefault !== undefined) {
+      if (body.serverDefault && !(def.scope === 'org' && isShareableKind(kind) && (await this.ownerId()) === u.organizationId)) throw new ForbiddenException('Only the organisation that runs this server can share a setting with every organisation');
+      serverDefault = body.serverDefault;
+    }
     const changed = def.fields.filter((f) => !f.transient && (f.type === 'secret' ? secrets[f.key] !== before[f.key] : values[f.key] !== before[f.key])).map((f) => f.key);
     await this.prisma.integrationSetting.upsert({
       where: { organizationId_kind: { organizationId: u.organizationId, kind } },
-      create: { organizationId: u.organizationId, kind, values, secrets: sealed, updatedById: u.id },
-      update: { values, secrets: sealed, updatedById: u.id, ...(changed.length ? { lastTestAt: null, lastTestOk: null, lastTestMessage: null } : {}) },
+      create: { organizationId: u.organizationId, kind, values, secrets: sealed, updatedById: u.id, serverDefault },
+      update: { values, secrets: sealed, updatedById: u.id, serverDefault, ...(changed.length ? { lastTestAt: null, lastTestOk: null, lastTestMessage: null } : {}) },
     });
     // Secrets are never written to the audit log, only which settings changed.
-    await this.audit.record({ organizationId: u.organizationId, actorId: u.id, action: 'integration.saved', entityType: 'IntegrationSetting', entityId: kind, detail: { kind, changed } });
+    await this.audit.record({ organizationId: u.organizationId, actorId: u.id, action: 'integration.saved', entityType: 'IntegrationSetting', entityId: kind, detail: { kind, changed, ...(serverDefault !== (existing?.serverDefault ?? false) ? { serverDefault } : {}) } });
     return { ...(await this.one(u, kind)), notice };
   }
 
@@ -443,7 +515,7 @@ export class IntegrationsService {
       }
       case 'zoho_books': {
         const z = await this.zohoBooks(u.organizationId);
-        if (!z.config) return { ok: false, message: z.otherTenant ? 'The server Zoho Books settings belong to another organisation.' : `Not set up yet. Missing: ${z.missing.join(', ')}` };
+        if (!z.config) return { ok: false, message: z.otherTenant ? 'These Zoho Books settings belong to another organisation.' : `Not set up yet. Missing: ${z.missing.join(', ')}` };
         const token = await this.zohoToken(z.config);
         const r = await this.http(`${z.config.apiUrl}/organizations`, { headers: { Authorization: `Zoho-oauthtoken ${token}` } });
         const j = safeJson(await r.text()) as { organizations?: { organization_id: string; name: string }[]; message?: string };

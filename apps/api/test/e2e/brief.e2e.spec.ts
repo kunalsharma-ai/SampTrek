@@ -3,7 +3,7 @@ import { PrismaClient } from '../../src/prisma/client';
 import request from 'supertest';
 import { AiService } from '../../src/ai/ai.service';
 import { Http } from '../../src/ai/provider';
-import { api, createApp, login, makeOrg, resetDb } from './helpers';
+import { api, createApp, login, makeOrg, resetDb, saveIntegration } from './helpers';
 
 type Req = { url: string; body: Record<string, any> };
 type Reply = { status?: number; body: unknown };
@@ -57,15 +57,13 @@ describe('Project from a brief (e2e)', () => {
   const upload = (buf: Buffer, name: string, token = pmToken) => http().post('/api/v1/ai/brief').set('Authorization', `Bearer ${token}`).attach('file', buf, name);
 
   beforeAll(async () => {
-    process.env.GEMINI_API_KEY = 'test-key';
-    process.env.AI_MODEL = 'main-model';
-    process.env.AI_FALLBACK_MODEL = 'small-model';
     ({ app, prisma } = await createApp());
     svc = app.get(AiService);
     await resetDb(prisma);
     const a = await makeOrg(prisma, 'brief');
     const b = await makeOrg(prisma, 'brief-other');
     org = a.org.id;
+    await saveIntegration(prisma, org, 'gemini', { GEMINI_API_KEY: 'test-key', AI_MODEL: 'main-model', AI_FALLBACK_MODEL: 'small-model' }, { serverDefault: true });
     pmToken = await login(app, a.users.PROJECT_MANAGER.email);
     pm = api(app, pmToken);
     viewer = api(app, await login(app, a.users.VIEWER.email));

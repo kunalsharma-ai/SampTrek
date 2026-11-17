@@ -1,4 +1,3 @@
-import { config } from '../../common/config';
 import { Http, PacedClient } from './client';
 import { Check, Ledger, LedgerContext, LedgerDoc, LedgerError, Party, Remote } from './types';
 
@@ -9,7 +8,8 @@ import { Check, Ledger, LedgerContext, LedgerDoc, LedgerError, Party, Remote } f
  */
 
 /** Granular scopes, required for Xero apps created from March 2026. XERO_SCOPES overrides for older apps. */
-export const xeroScopes = () => config.ledgers.xero?.scopes || 'offline_access accounting.contacts accounting.invoices accounting.payments accounting.settings.read';
+/** XERO_SCOPES: only for Xero apps created before March 2026 that still use broad scopes (not a key). */
+export const xeroScopes = () => process.env.XERO_SCOPES?.trim() || 'offline_access accounting.contacts accounting.invoices accounting.payments accounting.settings.read';
 
 export async function xeroTenants(http: Http, apiUrl: string, access: string): Promise<{ tenantId: string; tenantName?: string; tenantType?: string }[]> {
   const res = await http(`${apiUrl}/connections`, { method: 'GET', headers: { Authorization: `Bearer ${access}`, Accept: 'application/json' } });

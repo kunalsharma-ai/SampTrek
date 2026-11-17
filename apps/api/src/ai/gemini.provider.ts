@@ -71,7 +71,7 @@ export class GeminiProvider implements AiProvider {
       if (res.status >= 400 || !j) {
         const msg = j?.error?.message ?? `Gemini answered ${res.status}`;
         if (res.status === 429) throw new AiProviderError('The AI service is busy or the free daily allowance is used up. Try again in a minute.', 'rate_limited', 429);
-        if (res.status === 401 || res.status === 403) throw new AiProviderError('The AI service did not accept the API key. An admin should check GEMINI_API_KEY.', 'auth', res.status);
+        if (res.status === 401 || res.status === 403) throw new AiProviderError('The AI service did not accept the API key. An admin should check the key in Settings → Integrations → AI.', 'auth', res.status);
         if (res.status === 400 || res.status === 404) throw new AiProviderError(`The AI service refused the request: ${msg}`, 'bad_request', res.status);
         throw new AiProviderError(`The AI service is unavailable (${res.status}). Try again shortly.`, 'unavailable', res.status);
       }

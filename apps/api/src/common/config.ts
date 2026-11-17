@@ -55,22 +55,11 @@ export const config = {
   get reportSchedulerEnabled(): boolean {
     return process.env.REPORT_SCHEDULER_ENABLED !== 'false';
   },
-  /** Outgoing email from the server environment. Settings → Integrations overrides it per organisation. */
-  get smtp() {
-    return smtpFrom(process.env);
-  },
-  /** Zoho Books from the server environment (bound to ZOHO_BOOKS_TENANT). */
-  get zohoBooks() {
-    return zohoBooksFrom(process.env);
-  },
-  get zohoBooksMissing(): string[] {
-    return zohoBooksMissingFrom(process.env);
-  },
   get zohoBooksSchedulerEnabled(): boolean {
     return process.env.ZOHO_BOOKS_SCHEDULER_ENABLED !== 'false';
   },
-  get ledgers() {
-    return ledgersFrom(process.env);
+  get ledgerSchedulerEnabled(): boolean {
+    return process.env.LEDGER_SCHEDULER_ENABLED !== 'false';
   },
   /** Key that encrypts accounting sign-in tokens. Falls back to the two-step sign-in key. */
   get accountingEncryptionKey(): string {
@@ -82,13 +71,10 @@ export const config = {
     const k = process.env.INTEGRATIONS_ENCRYPTION_KEY;
     return k && k.length >= 16 ? k : this.accountingEncryptionKey;
   },
-  get ai() {
-    return aiFrom(process.env);
-  },
   cookieName: 'projexa_token',
 };
 
-/** Settings keyed by their environment variable names: the server env, or an organisation's saved integration. */
+/** An integration's settings, keyed by the old environment variable names (saved in Settings → Integrations). */
 export type EnvMap = Record<string, string | undefined>;
 
 /**

@@ -1,6 +1,6 @@
 # AI copilot and voice assistant
 
-> **Now set up in the app.** An admin adds the Gemini API key and models in **Settings → Integrations** (see `docs/INTEGRATIONS.md`). The environment variables are an optional fallback.
+> **Now set up in the app.** An admin adds the Gemini API key and models in **Settings → Integrations** (see `docs/INTEGRATIONS.md`). Keys are no longer read from the server environment: the variable names below are the field names in the app, and values left in an old `.env` are copied into the database once when the API starts (docs/INTEGRATIONS.md).
 
 SampTrek's copilot answers questions about projects, fieldwork, tasks, the team and finance, and proposes changes that a person confirms. It talks to the model through a provider-independent gateway (`apps/api/src/ai/provider.ts`). Google Gemini is the first provider (`gemini.provider.ts`); another provider is a new class implementing `AiProvider`.
 
@@ -24,7 +24,7 @@ Optional variables:
 | `AI_LIVE_MODEL` | `gemini-3.8-live` | Model for spoken conversations |
 | `GEMINI_API_URL` | `https://generativelanguage.googleapis.com` | Only changed for testing |
 
-Without `GEMINI_API_KEY` the copilot says it is not set up and makes no calls.
+Without a Gemini API key in Settings → Integrations (the organisation's own, or the server owner's shared default) the copilot says it is not set up and makes no calls.
 
 ## Models, limits and cost (checked 2026-11-02)
 

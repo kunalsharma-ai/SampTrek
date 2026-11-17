@@ -5,7 +5,7 @@ import request from 'supertest';
 import { b64url } from '../../src/auth/oidc';
 import { SsoService } from '../../src/auth/sso.service';
 import { totp } from '../../src/auth/totp';
-import { api, createApp, login, makeOrg, PASSWORD, resetDb } from './helpers';
+import { api, createApp, login, makeOrg, PASSWORD, removeIntegration, resetDb, saveIntegration } from './helpers';
 
 const TENANT = '11111111-2222-3333-4444-555555555555';
 const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
@@ -30,15 +30,19 @@ describe('Single sign-on (e2e)', () => {
   const http = () => request(app.getHttpServer());
   const env = { GOOGLE: 'g', MICROSOFT: 'm', ZOHO: 'z' } as const;
 
+  const saveApp = (k: keyof typeof env, owner: string) =>
+    saveIntegration(prisma, owner, `sso_${k.toLowerCase()}` as 'sso_google', { [`${k}_CLIENT_ID`]: `${env[k]}-client`, [`${k}_CLIENT_SECRET`]: `${env[k]}-secret` });
+  let ownerOrg: string;
+
   beforeAll(async () => {
-    for (const [k, v] of Object.entries(env)) {
-      process.env[`${k}_CLIENT_ID`] = `${v}-client`;
-      process.env[`${k}_CLIENT_SECRET`] = `${v}-secret`;
-    }
     process.env.WEB_ORIGIN = 'http://web.samptrek.test';
     ({ app, prisma } = await createApp());
     await resetDb(prisma);
-    ({ users } = await makeOrg(prisma, 'acme'));
+    let acme: { id: string };
+    ({ users, org: acme } = await makeOrg(prisma, 'acme'));
+    // The sign-in apps are saved in Settings → Integrations by the organisation that runs the server.
+    ownerOrg = acme.id;
+    for (const k of Object.keys(env) as (keyof typeof env)[]) await saveApp(k, ownerOrg);
     ({ users: other } = await makeOrg(prisma, 'other'));
     // Same people, on the company's domain.
     const short: Record<string, string> = { ADMIN: 'admin', PROJECT_MANAGER: 'pm', VIEWER: 'viewer' };
@@ -68,10 +72,6 @@ describe('Single sign-on (e2e)', () => {
     };
   });
   afterAll(async () => {
-    for (const k of Object.keys(env)) {
-      delete process.env[`${k}_CLIENT_ID`];
-      delete process.env[`${k}_CLIENT_SECRET`];
-    }
     await app.close();
   });
 
@@ -104,9 +104,9 @@ describe('Single sign-on (e2e)', () => {
     await settings({ providers: { google: false, microsoft: true, zoho: false } }).expect(400);
     await settings({ domains: ['not a domain'] }).expect(400);
     await settings({ providers: { google: false, microsoft: false, zoho: false }, domains: [], ssoOnly: true }).expect(400);
-    delete process.env.ZOHO_CLIENT_ID;
+    await removeIntegration(prisma, 'sso_zoho');
     await settings({ providers: { google: false, microsoft: false, zoho: true } }).expect(400);
-    process.env.ZOHO_CLIENT_ID = 'z-client';
+    await saveApp('ZOHO', ownerOrg);
   });
 
   it('refuses sign-in while the provider is off for the organization', async () => {

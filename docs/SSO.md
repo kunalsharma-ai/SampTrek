@@ -1,6 +1,6 @@
 # Single sign-on (Google, Microsoft, Zoho)
 
-> **Now set up in the app.** Admins of the organisation that runs the server enter the client IDs and secrets in **Settings → Integrations** (see `docs/INTEGRATIONS.md`). The provider steps below still apply; the environment variables are an optional fallback.
+> **Now set up in the app.** Admins of the organisation that runs the server enter the client IDs and secrets in **Settings → Integrations** (see `docs/INTEGRATIONS.md`). The provider steps below still apply. Keys are no longer read from the server environment: the variable names below are the field names in the app, and values left in an old `.env` are copied into the database once when the API starts (docs/INTEGRATIONS.md).
 
 Staff can sign in with their company Google, Microsoft or Zoho account instead of a SampTrek password. All three use OpenID Connect (authorization code flow with PKCE). Setting it up has two parts: register SampTrek once with each provider (server environment), then each organization turns on the providers it wants (Settings → Single sign-on).
 
@@ -36,7 +36,7 @@ Turning a provider off also stops accounts already linked to it. Deactivating a 
 
 ## Server setup
 
-Each provider needs a client ID and secret in the API environment (`apps/api/.env`, never in the database):
+Each provider needs a client ID and secret, entered in Settings → Integrations and stored encrypted in the database (the names below are the field names; they are not read from `apps/api/.env`):
 
 ```
 GOOGLE_CLIENT_ID=...

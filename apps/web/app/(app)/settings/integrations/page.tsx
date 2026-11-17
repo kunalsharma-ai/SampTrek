@@ -10,11 +10,11 @@ import { Label } from '@/components/help';
 
 type FieldType = 'text' | 'secret' | 'select' | 'url' | 'email';
 interface FieldDef { key: string; label: string; type: FieldType; required?: boolean; options?: { value: string; label: string }[]; placeholder?: string; hint?: string; default?: string; transient?: boolean }
-interface Status { state: 'connected' | 'env' | 'off' | 'other'; source: 'app' | 'env' | null; detail: string | null; updatedAt: string | null; updatedBy: string | null; lastTestAt: string | null; lastTestOk: boolean | null; lastTestMessage: string | null }
+interface Status { state: 'connected' | 'shared' | 'off' | 'other'; source: 'app' | 'shared' | null; detail: string | null; updatedAt: string | null; updatedBy: string | null; lastTestAt: string | null; lastTestOk: boolean | null; lastTestMessage: string | null }
 interface Integration {
   kind: string; group: string; label: string; summary: string; scope: 'org' | 'platform'; ownerOnly?: boolean;
   fields: FieldDef[]; steps: string[]; links: { label: string; href: string }[]; testable: boolean; next?: { label: string; href: string };
-  redirectUri: string | null; editable: boolean; managedByServerOwner: boolean; status: Status; values: Record<string, string>; secretsSet: Record<string, boolean>;
+  redirectUri: string | null; editable: boolean; managedByServerOwner: boolean; shareable: boolean; serverDefault: boolean; status: Status; values: Record<string, string>; secretsSet: Record<string, boolean>;
 }
 interface Data { owner: boolean; integrations: Integration[]; bootstrap: { name: string; why: string; set: boolean }[]; encryptionKeySet: boolean }
 
@@ -37,7 +37,7 @@ function StateChip({ i }: { i: Integration }) {
   const s = i.status;
   if (s.state === 'connected' && s.lastTestOk === false) return <span className="chip bg-warn/15 text-warn">Check settings</span>;
   if (s.state === 'connected') return <span className="chip bg-ok/15 text-ok">{s.lastTestOk ? 'Connected' : 'Saved'}</span>;
-  if (s.state === 'env') return <span className="chip bg-info/15 text-info">Server settings</span>;
+  if (s.state === 'shared') return <span className="chip bg-info/15 text-info">Server default</span>;
   if (s.state === 'other') return <span className="chip bg-sunken text-muted">Other organisation</span>;
   return <span className="chip bg-sunken text-muted">Not set up</span>;
 }
@@ -61,7 +61,7 @@ export default function IntegrationsPage() {
 
   const counts = useMemo(() => {
     const list = data?.integrations ?? [];
-    return { ready: list.filter((i) => i.status.state === 'connected' || i.status.state === 'env').length, total: list.length };
+    return { ready: list.filter((i) => i.status.state === 'connected' || i.status.state === 'shared').length, total: list.length };
   }, [data]);
 
   if (me && me.user.role !== 'ADMIN') return <><PageHeader title="Integrations" /><p className="text-sm text-muted">Only admins can set up integrations.</p></>;
@@ -72,7 +72,7 @@ export default function IntegrationsPage() {
     <>
       <PageHeader
         title="Integrations"
-        subtitle="Connect email, sign-in, AI, accounting and SampBidx here. Nothing needs to change on the server."
+        subtitle="Connect email, sign-in, AI, accounting, payments and SampBidx here. Every key is kept in the database, encrypted. Nothing goes in the server's .env file."
         actions={<span className="chip bg-sunken text-muted"><PlugZap className="mr-1 h-3.5 w-3.5" />{counts.ready} of {counts.total} ready</span>}
       />
       <div className="space-y-6">
@@ -95,7 +95,7 @@ export default function IntegrationsPage() {
         })}
 
         <Section title={<span className="flex items-center gap-2"><Server className="h-4 w-4 text-muted" /> Server basics</span>}>
-          <p className="mb-3 text-sm text-muted">Only these stay on the server, set once by whoever installs SampTrek (see docs/INTEGRATIONS.md). Everything else is on this page.</p>
+          <p className="mb-3 text-sm text-muted">Only these stay in the server&apos;s .env file, set once by whoever installs SampTrek: where the database is, the keys that protect what is stored in it, and the server&apos;s own addresses (see docs/INTEGRATIONS.md). Every API key and secret is entered on this page and kept in the database.</p>
           <ul className="grid gap-2 sm:grid-cols-2">
             {data.bootstrap.map((b) => (
               <li key={b.name} className="flex items-start gap-2 rounded-lg border border-line p-3 text-sm">
@@ -118,8 +118,9 @@ function Card({ i, open, onToggle, onChange }: { i: Integration; open: boolean; 
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [share, setShare] = useState(i.serverDefault);
 
-  useEffect(() => { setDraft(initial()); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [i.status.updatedAt, i.status.source]);
+  useEffect(() => { setDraft(initial()); setShare(i.serverDefault); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [i.status.updatedAt, i.status.source]);
 
   const s = i.status;
   const lastTest = s.lastTestAt ? { ok: !!s.lastTestOk, message: s.lastTestMessage ?? '' } : null;
@@ -129,7 +130,7 @@ function Card({ i, open, onToggle, onChange }: { i: Integration; open: boolean; 
     setBusy('save'); setError(null); setResult(null); setNotice(null);
     try {
       const values = Object.fromEntries(i.fields.map((f) => [f.key, draft[f.key] ?? '']));
-      const r = await api<Integration & { notice: string | null }>(`/integrations/settings/${i.kind}`, { method: 'PUT', json: { values } });
+      const r = await api<Integration & { notice: string | null }>(`/integrations/settings/${i.kind}`, { method: 'PUT', json: { values, ...(i.shareable ? { serverDefault: share } : {}) } });
       onChange(r);
       setNotice(r.notice ?? 'Saved.');
       if (i.testable && !r.notice) await test(r);
@@ -144,7 +145,7 @@ function Card({ i, open, onToggle, onChange }: { i: Integration; open: boolean; 
     } catch (e) { setError(e); } finally { setBusy(null); }
   }
   async function remove() {
-    if (!confirm(`Remove the saved ${i.label} settings? ${i.kind === 'smtp' ? 'Emails stop' : 'It stops working'} unless the server has its own settings.`)) return;
+    if (!confirm(`Remove the saved ${i.label} settings? ${i.kind === 'smtp' ? 'Emails stop' : 'It stops working'}${i.shareable && i.serverDefault ? ', also for the organisations using it as the default' : ''}. The keys are deleted from the database.`)) return;
     setBusy('remove'); setError(null); setResult(null); setNotice(null);
     try { onChange(await api<Integration>(`/integrations/settings/${i.kind}`, { method: 'DELETE' })); } catch (e) { setError(e); } finally { setBusy(null); }
   }
@@ -166,11 +167,12 @@ function Card({ i, open, onToggle, onChange }: { i: Integration; open: boolean; 
             {i.managedByServerOwner && (
               <p className="rounded-lg bg-sunken px-3 py-2 text-sm text-muted">
                 {i.scope === 'platform' ? 'One app serves every organisation on this SampTrek server, so it is set up by the organisation that runs the server.' : 'This reaches a private office network, so only the organisation that runs this SampTrek server can set it.'}
-                {s.state === 'connected' || s.state === 'env' ? ' It is ready to use.' : ' Ask them to add it.'}
+                {s.state === 'connected' || s.state === 'shared' ? ' It is ready to use.' : ' Ask them to add it.'}
               </p>
             )}
-            {s.state === 'env' && i.editable && <p className="rounded-lg bg-info/10 px-3 py-2 text-xs text-info">Working from the server&apos;s settings. Save here to manage it in the app instead{i.fields.some((f) => f.type === 'secret') ? ' (enter the secret again)' : ''}.</p>}
-            {s.detail && <p className="rounded-lg bg-warn/10 px-3 py-2 text-xs text-warn">{s.detail}</p>}
+            {s.state === 'shared' ? (
+              <p className="rounded-lg bg-info/10 px-3 py-2 text-xs text-info">Using the default set up by the organisation that runs this SampTrek server.{i.editable ? ' Save your own settings here to use them instead.' : ''}</p>
+            ) : s.detail && <p className="rounded-lg bg-warn/10 px-3 py-2 text-xs text-warn">{s.detail}</p>}
             {i.editable && (
               <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); void save(); }}>
                 {i.fields.map((f) => (
@@ -186,7 +188,7 @@ function Card({ i, open, onToggle, onChange }: { i: Integration; open: boolean; 
                         type={f.type === 'secret' ? 'password' : f.type === 'email' ? 'email' : f.type === 'url' ? 'url' : 'text'}
                         autoComplete={f.type === 'secret' ? 'new-password' : 'off'}
                         spellCheck={false}
-                        placeholder={f.type === 'secret' && i.secretsSet[f.key] ? (s.source === 'app' ? 'Saved. Leave empty to keep it' : 'Set on the server. Enter it to save here') : f.placeholder}
+                        placeholder={f.type === 'secret' && i.secretsSet[f.key] ? 'Saved. Leave empty to keep it' : f.placeholder}
                         value={draft[f.key] ?? ''}
                         onChange={(e) => setDraft({ ...draft, [f.key]: e.target.value })}
                       />
@@ -194,11 +196,17 @@ function Card({ i, open, onToggle, onChange }: { i: Integration; open: boolean; 
                     {f.hint && <span className="mt-1 block text-xs text-muted">{f.hint}</span>}
                   </label>
                 ))}
+                {i.shareable && (
+                  <label className="flex items-start gap-2 text-sm">
+                    <input type="checkbox" className="mt-0.5" checked={share} onChange={(e) => setShare(e.target.checked)} />
+                    <span>Also use for organisations that have not set up their own<span className="block text-xs text-muted">They use it without seeing the mailbox, key or other values.</span></span>
+                  </label>
+                )}
                 <ErrorBox error={error} />
                 {notice && <p className="text-sm text-ok">{notice}</p>}
                 <div className="flex flex-wrap items-center gap-2 pt-1">
                   <button type="submit" className="btn-primary" disabled={!!busy || missingRequired}>{busy === 'save' ? <Loader2 className="h-4 w-4 animate-spin" /> : null}{i.testable ? 'Save and test' : 'Save'}</button>
-                  {i.testable && (s.state === 'connected' || s.state === 'env') && <button type="button" className="btn-ghost" disabled={!!busy} onClick={() => test()}>{busy === 'test' && <Loader2 className="h-4 w-4 animate-spin" />}Test connection</button>}
+                  {i.testable && (s.state === 'connected' || s.state === 'shared') && <button type="button" className="btn-ghost" disabled={!!busy} onClick={() => test()}>{busy === 'test' && <Loader2 className="h-4 w-4 animate-spin" />}Test connection</button>}
                   {s.source === 'app' && <button type="button" className="btn-ghost text-bad" disabled={!!busy} onClick={remove}><Trash2 className="h-4 w-4" /> Remove</button>}
                 </div>
               </form>
@@ -210,7 +218,7 @@ function Card({ i, open, onToggle, onChange }: { i: Integration; open: boolean; 
               </p>
             )}
             {s.updatedAt && <p className="text-xs text-muted">Last saved {when(s.updatedAt)}{s.updatedBy ? ` by ${s.updatedBy}` : ''}.</p>}
-            {i.next && (s.state === 'connected' || s.state === 'env') && <Link href={i.next.href} className="inline-flex items-center gap-1 text-sm text-brand hover:underline">Next: {i.next.label} →</Link>}
+            {i.next && (s.state === 'connected' || s.state === 'shared') && <Link href={i.next.href} className="inline-flex items-center gap-1 text-sm text-brand hover:underline">Next: {i.next.label} →</Link>}
           </div>
 
           <div className="min-w-0 rounded-lg bg-sunken/60 p-4">

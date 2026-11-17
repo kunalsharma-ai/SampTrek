@@ -106,20 +106,79 @@ describe('Settings → Integrations (e2e)', () => {
     expect(bad.message).toMatch(/app password/);
   });
 
-  it('falls back to the server env until an organisation saves its own, and removing goes back to env', async () => {
+  it('never reads keys from the server env, and the owner can share email as the default for other organisations', async () => {
+    const mail = app.get(MailService);
+    const tenant = await prisma.organization.findUniqueOrThrow({ where: { slug: 'tenant' } });
     process.env.SMTP_USER = 'env@server.test';
     process.env.SMTP_PASS = 'env-pass';
     const t = await item(otherAdmin, 'smtp');
-    expect(t.status.state).toBe('env');
-    expect(t.values.SMTP_USER).toBe('env@server.test');
-    expect(t.secretsSet.SMTP_PASS).toBe(true);
-    const owner = await item(admin, 'smtp');
-    expect(owner.status.source).toBe('app');
-    await admin.delete('/integrations/settings/smtp').expect(200);
-    expect((await item(admin, 'smtp')).status.source).toBe('env');
+    expect(t.status.state).toBe('off');
+    expect(t.values).toEqual({});
+    expect((await mail.status(tenant.id)).host).toBeNull();
     delete process.env.SMTP_USER;
     delete process.env.SMTP_PASS;
+
+    // Only the server owner may share a setting.
+    expect((await otherAdmin.put('/integrations/settings/smtp', { values: { SMTP_USER: 'x@tenant.test', SMTP_PASS: 'p' }, serverDefault: true }).expect(403)).body.message).toMatch(/runs this server/);
+    const shared = (await admin.put('/integrations/settings/smtp', { values: { SMTP_PASS: 'app-pass-123' }, serverDefault: true }).expect(200)).body;
+    expect(shared).toMatchObject({ shareable: true, serverDefault: true });
+    const seen = await item(otherAdmin, 'smtp');
+    expect(seen).toMatchObject({ shareable: false, serverDefault: false, values: {}, secretsSet: {} });
+    expect(seen.status).toMatchObject({ state: 'shared', source: 'shared' });
+    expect(JSON.stringify(seen)).not.toContain('reports@owner.test');
+    expect(await mail.status(tenant.id)).toMatchObject({ configured: true, host: 'smtp.zoho.in' });
+
+    // An organisation's own setting wins over the shared one.
+    await otherAdmin.put('/integrations/settings/smtp', { values: { SMTP_HOST: 'smtp.zoho.eu', SMTP_USER: 'mail@tenant.test', SMTP_PASS: 'tenant-pass' } }).expect(200);
+    expect((await mail.status(tenant.id)).host).toBe('smtp.zoho.eu');
+    await otherAdmin.delete('/integrations/settings/smtp').expect(200);
+    expect((await item(otherAdmin, 'smtp')).status.state).toBe('shared');
+
+    // Saving without the flag keeps it; turning it off stops sharing.
+    await admin.put('/integrations/settings/smtp', { values: {} }).expect(200);
+    expect((await item(admin, 'smtp')).serverDefault).toBe(true);
+    await admin.put('/integrations/settings/smtp', { values: {}, serverDefault: false }).expect(200);
+    expect((await item(otherAdmin, 'smtp')).status.state).toBe('off');
+    await admin.delete('/integrations/settings/smtp').expect(200);
     expect((await item(admin, 'smtp')).status.state).toBe('off');
+  });
+
+  it('copies keys left in an old .env into the database once, and never brings back one that was removed', async () => {
+    const tenant = await prisma.organization.findUniqueOrThrow({ where: { slug: 'tenant' } });
+    // Already saved in the app: the .env value must not replace it.
+    await admin.put('/integrations/settings/gemini', { values: { GEMINI_API_KEY: 'app-gemini' } }).expect(200);
+    const oldEnv = {
+      SMTP_HOST: 'smtp.zoho.in', SMTP_USER: 'env@server.test', SMTP_PASS: 'env-pass',
+      GEMINI_API_KEY: 'env-gemini',
+      STRIPE_SECRET_KEY: 'sk_test_env', STRIPE_WEBHOOK_SECRET: 'whsec_env',
+      ZOHO_BOOKS_CLIENT_ID: '1000.ENV', ZOHO_BOOKS_CLIENT_SECRET: 'zb-secret', ZOHO_BOOKS_REFRESH_TOKEN: 'zb-refresh', ZOHO_BOOKS_ORGANIZATION_ID: '600000999', ZOHO_BOOKS_TENANT: 'tenant',
+      DATABASE_URL: 'mongodb://example/db',
+    };
+    const done = await svc.importFromEnv(oldEnv);
+    expect(done.map((d) => [d.kind, d.organizationId]).sort()).toEqual([['smtp', ownerOrgId], ['stripe', ownerOrgId], ['zoho_books', tenant.id]].sort());
+
+    const smtp = await prisma.integrationSetting.findFirstOrThrow({ where: { organizationId: ownerOrgId, kind: 'smtp' } });
+    expect(smtp.serverDefault).toBe(true); // .env email applied to every organisation, so it stays shared
+    expect(smtp.values).toEqual({ SMTP_HOST: 'smtp.zoho.in', SMTP_USER: 'env@server.test' });
+    expect(smtp.secrets).toMatch(/^v1\./);
+    expect(smtp.secrets).not.toContain('env-pass');
+    const stripe = await prisma.integrationSetting.findFirstOrThrow({ where: { organizationId: ownerOrgId, kind: 'stripe' } });
+    expect(stripe.serverDefault).toBe(false);
+    expect((await item(admin, 'stripe')).status.state).toBe('connected');
+    expect((await item(otherAdmin, 'zoho_books')).status.state).toBe('connected');
+    expect((await item(otherAdmin, 'smtp')).status.state).toBe('shared');
+    expect((await svc.ai(ownerOrgId))?.apiKey).toBe('app-gemini');
+    expect((await prisma.envImport.findMany()).map((r) => r.id).sort()).toEqual(['gemini', 'smtp', 'stripe', 'zoho_books']);
+    const logs = await prisma.auditEvent.findMany({ where: { action: 'integration.imported' } });
+    expect(logs).toHaveLength(3);
+    expect(JSON.stringify(logs)).not.toMatch(/env-pass|sk_test_env|zb-secret/);
+
+    // Removed in the app: a leftover .env line does not bring it back on the next start.
+    await admin.delete('/integrations/settings/smtp').expect(200);
+    expect(await svc.importFromEnv(oldEnv)).toEqual([]);
+    expect((await item(admin, 'smtp')).status.state).toBe('off');
+
+    await prisma.integrationSetting.deleteMany({ where: { kind: { in: ['gemini', 'stripe', 'zoho_books'] } } });
   });
 
   it('sign-in apps are one per server: only the owner organisation sets them, and the sign-in page picks them up', async () => {
