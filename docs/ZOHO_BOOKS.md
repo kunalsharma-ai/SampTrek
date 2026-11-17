@@ -1,6 +1,6 @@
 # Zoho Books sync
 
-> **Now set up in the app.** An admin enters the Self Client ID, secret and grant code in **Settings → Integrations**; SampTrek swaps the code for the refresh token, so the curl step below is no longer needed (see `docs/INTEGRATIONS.md`). The environment variables are an optional fallback.
+> **Now set up in the app.** An admin enters the Self Client ID, secret and grant code in **Settings → Integrations**; SampTrek swaps the code for the refresh token, so the curl step below is no longer needed (see `docs/INTEGRATIONS.md`). Keys are no longer read from the server environment: the variable names below are the field names in the app, and values left in an old `.env` are copied into the database once when the API starts (docs/INTEGRATIONS.md).
 
 SampTrek can send documents straight into **Zoho Books** through its v3 API, so nobody has to import files. It sends:
 

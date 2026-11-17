@@ -3,7 +3,7 @@ import { PrismaClient } from '../../src/prisma/client';
 import request from 'supertest';
 import { AiService } from '../../src/ai/ai.service';
 import { Http } from '../../src/ai/provider';
-import { api, createApp, login, makeOrg, resetDb } from './helpers';
+import { api, createApp, login, makeOrg, resetDb, saveIntegration } from './helpers';
 
 type Req = { url: string; headers: Record<string, string>; body: Record<string, any> };
 type Reply = { status?: number; body: unknown } | ((r: Req) => { status?: number; body: unknown });
@@ -75,13 +75,13 @@ describe('AI copilot (e2e)', () => {
   const ask = (as: ReturnType<typeof api>, message: string, extra: object = {}) => as.post('/ai/chat', { message, ...extra });
 
   it('says it is not set up without a key', async () => {
-    delete process.env.GEMINI_API_KEY;
+    // A key in the server env is not used: keys are kept in Settings → Integrations.
+    process.env.GEMINI_API_KEY = 'env-key';
     expect((await pm.get('/ai/status').expect(200)).body).toMatchObject({ configured: false, enabled: false, reason: 'not_configured' });
-    expect((await ask(pm, 'hi').expect(503)).body.message).toMatch(/GEMINI_API_KEY/);
-    process.env.GEMINI_API_KEY = 'test-key';
-    process.env.AI_MODEL = 'gemini-test-flash';
-    process.env.AI_FALLBACK_MODEL = 'gemini-test-lite';
-    process.env.AI_LIVE_MODEL = 'gemini-test-live';
+    expect((await ask(pm, 'hi').expect(503)).body.message).toMatch(/Settings → Integrations/);
+    delete process.env.GEMINI_API_KEY;
+    // Saved by the organisation that runs the server and shared as the default, so ai-other has it too.
+    await saveIntegration(prisma, org, 'gemini', { GEMINI_API_KEY: 'test-key', AI_MODEL: 'gemini-test-flash', AI_FALLBACK_MODEL: 'gemini-test-lite', AI_LIVE_MODEL: 'gemini-test-live' }, { serverDefault: true });
     expect((await pm.get('/ai/status').expect(200)).body).toMatchObject({ configured: true, enabled: true, model: 'gemini-test-flash', features: { actions: true, documents: true, voice: true } });
   });
 

@@ -1,6 +1,6 @@
 # Scheduled reports by email
 
-> **Now set up in the app.** Each organisation enters its Zoho Mail SMTP settings in **Settings → Integrations** (see `docs/INTEGRATIONS.md`). The environment variables are an optional fallback.
+> **Now set up in the app.** Each organisation enters its Zoho Mail SMTP settings in **Settings → Integrations** (see `docs/INTEGRATIONS.md`). Keys are no longer read from the server environment: the variable names below are the field names in the app, and values left in an old `.env` are copied into the database once when the API starts (docs/INTEGRATIONS.md).
 
 Milestone 14. Reports are emailed on a schedule through the company's **Zoho Mail** account.
 Each email has the headline numbers and the top 25 rows; the full table is attached as a CSV.
@@ -67,7 +67,7 @@ centre your Zoho account is in (the domain you sign in at: zoho.com, zoho.in, zo
 
 Zoho Mail limits how much one mailbox sends per day. Scheduled reports are small in number, but
 if volume grows a lot, Zoho ZeptoMail (Zoho's transactional email service) also speaks SMTP:
-point `SMTP_HOST`, `SMTP_USER` and `SMTP_PASS` at it without code changes.
+enter its SMTP server, user and password in Settings → Integrations → Email without code changes.
 
 ## API
 

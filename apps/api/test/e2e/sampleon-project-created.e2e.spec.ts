@@ -10,7 +10,7 @@ import { createHash, createHmac } from 'crypto';
 import { createServer, IncomingMessage, Server } from 'http';
 import { AddressInfo } from 'net';
 import { SampleonOutbox } from '../../src/sampleon/sampleon-outbox';
-import { api, createApp, login, makeOrg, resetDb } from './helpers';
+import { api, createApp, login, makeOrg, resetDb, saveIntegration } from './helpers';
 
 const SECRET = 'projexa-secret-for-project-events';
 const sha = (s: string) => createHash('sha256').update(s).digest('hex');
@@ -48,13 +48,14 @@ describe('SAMPLEON project.created', () => {
       });
     });
     await new Promise<void>((r) => mock.listen(0, '127.0.0.1', r));
-    process.env.SAMPLEON_URL = `http://127.0.0.1:${(mock.address() as AddressInfo).port}`;
-    process.env.SAMPLEON_CLIENT_SECRET = SECRET;
+    const sampleonUrl = `http://127.0.0.1:${(mock.address() as AddressInfo).port}`;
 
     ({ app, prisma } = await createApp());
     outbox = app.get(SampleonOutbox);
     await resetDb(prisma);
     const a = await makeOrg(prisma, 'alpha');
+    // Settings → Integrations → SampAudience, saved by the organisation that runs the server.
+    await saveIntegration(prisma, a.org.id, 'sampleon', { SAMPLEON_URL: sampleonUrl, SAMPLEON_CLIENT_SECRET: SECRET });
     orgId = a.org.id;
     pm = api(app, await login(app, a.users.PROJECT_MANAGER.email));
     viewer = api(app, await login(app, a.users.VIEWER.email));
@@ -64,8 +65,6 @@ describe('SAMPLEON project.created', () => {
   afterAll(async () => {
     await app.close();
     await new Promise((r) => mock.close(r));
-    delete process.env.SAMPLEON_URL;
-    delete process.env.SAMPLEON_CLIENT_SECRET;
   });
 
   it('queues project.created with the project and sends it signed to SAMPLEON', async () => {
@@ -132,15 +131,16 @@ describe('SAMPLEON project.created', () => {
   });
 
   it('queues nothing while the integration is not configured', async () => {
-    const saved = process.env.SAMPLEON_CLIENT_SECRET;
-    delete process.env.SAMPLEON_CLIENT_SECRET;
+    const row = await prisma.integrationSetting.findFirstOrThrow({ where: { kind: 'sampleon' } });
+    await prisma.integrationSetting.delete({ where: { id: row.id } });
     try {
       const p = await newProject('Offline study', [{ countryCode: 'IT', language: 'it' }]);
       expect(await prisma.sampleonOutboundEvent.count({ where: { projectId: p.id } })).toBe(0);
       expect(await outbox.processDue()).toBe(0);
       await pm.post(`/projects/${p.id}/sampleon/announce`).expect(503);
     } finally {
-      process.env.SAMPLEON_CLIENT_SECRET = saved;
+      const { id: _id, values, ...rest } = row;
+      await prisma.integrationSetting.create({ data: { ...rest, values: values as object } });
     }
   });
 });

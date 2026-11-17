@@ -27,7 +27,7 @@ import { idsMatching } from '../../prisma/mongo-compat';
 /**
  * Direct sync to Xero, QuickBooks Online and Tally Prime (docs/ACCOUNTING_SYNC.md). Xero and
  * QuickBooks: an admin signs in once with OAuth; the tokens are stored encrypted and refreshed as
- * they rotate. Tally: the server's TALLY_URL, bound to one organisation like Zoho Books.
+ * they rotate. Tally: the address saved in Settings → Integrations, bound to the organisation that saved it.
  */
 
 export const syncSettingsSchema = z
@@ -314,7 +314,7 @@ export class LedgerService {
 
   @Interval(5 * 60_000)
   async tick() {
-    if (!config.ledgers.schedulerEnabled) return;
+    if (!config.ledgerSchedulerEnabled) return;
     const hourly = await idsMatching(this.prisma.ledgerConnection, { 'settings.hourly': true });
     const conns = await this.prisma.ledgerConnection.findMany({ where: { id: { in: hourly } }, select: { organizationId: true, provider: true, status: true } });
     for (const c of conns) {

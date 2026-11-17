@@ -22,12 +22,15 @@ The API image also contains:
 
 ## Settings
 
-Put these in a `.env` file next to `docker-compose.yml`:
+Put these in a `.env` file next to `docker-compose.yml`. They are the only settings the containers
+take: no API key or secret goes here. Email, SSO, Gemini, accounting, SampAudience, payments, push and
+backup storage keys are entered in the app at **Settings → Integrations** and stored in MongoDB,
+encrypted with `MFA_ENCRYPTION_KEY` (docs/INTEGRATIONS.md).
 
 | Variable | Needed | Notes |
 | --- | --- | --- |
 | `JWT_SECRET` | yes | Long random string (`openssl rand -hex 32`). The API stops at start-up without it. |
-| `MFA_ENCRYPTION_KEY` | recommended | Encrypts two-step sign-in secrets; falls back to `JWT_SECRET`. Keep it the same forever once people use 2FA. |
+| `MFA_ENCRYPTION_KEY` | recommended | Master key: encrypts the keys saved in Settings → Integrations and two-step sign-in secrets; falls back to `JWT_SECRET`. Set it before the first start, back it up, and never change it. |
 | `WEB_ORIGIN` | yes | e.g. `https://samptrek.sampledge.com` |
 | `PUBLIC_BASE_URL` | yes | Public API address used in survey links, e.g. `https://api.samptrek.sampledge.com` |
 | `NEXT_PUBLIC_API_URL` | build | Empty = same domain through nginx (`/api/v1`). Or the API domain. |

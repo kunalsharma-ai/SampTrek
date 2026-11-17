@@ -1,7 +1,7 @@
 /**
- * Every integration an admin can set up in Settings → Integrations (docs/INTEGRATIONS.md).
- * Field keys are the old environment variable names, so a saved integration and the server env
- * feed the same config builders (common/config.ts), and env still works as a fallback.
+ * Every integration an admin can set up in Settings → Integrations (docs/INTEGRATIONS.md). All of
+ * them are kept in the database. Field keys are the old environment variable names, so the config
+ * builders (common/config.ts) stay the same and old .env values can be copied in once on start.
  */
 
 export const INTEGRATION_KINDS = ['sampleon', 'smtp', 'sso_google', 'sso_microsoft', 'sso_zoho', 'gemini', 'zoho_books', 'xero', 'quickbooks', 'tally', 'bidzo', 'razorpay', 'stripe', 'push', 'backup_storage', 'ip_reputation'] as const;
@@ -12,6 +12,9 @@ export const isPaymentKind = (k: string) => (PAYMENT_KINDS as readonly string[])
 export const SERVER_ONLY_KINDS = [...PAYMENT_KINDS, 'backup_storage'] as const;
 export const isServerOnlyKind = (k: string) => (SERVER_ONLY_KINDS as readonly string[]).includes(k);
 export type IntegrationKind = (typeof INTEGRATION_KINDS)[number];
+/** Organisation settings the server owner may share as the default for organisations without their own (as .env once did). */
+export const SHAREABLE_KINDS = ['smtp', 'gemini', 'ip_reputation', 'bidzo'] as const;
+export const isShareableKind = (k: string) => (SHAREABLE_KINDS as readonly string[]).includes(k);
 export const isKind = (k: string): k is IntegrationKind => (INTEGRATION_KINDS as readonly string[]).includes(k);
 
 export type FieldType = 'text' | 'secret' | 'select' | 'url' | 'email';
@@ -452,7 +455,10 @@ export const CATALOG: KindDef[] = [
 
 export const KIND: Record<IntegrationKind, KindDef> = Object.fromEntries(CATALOG.map((k) => [k.kind, k])) as Record<IntegrationKind, KindDef>;
 
-/** Server-only settings that stay in the environment (docs/INTEGRATIONS.md). */
+/**
+ * The only settings that stay in .env (docs/INTEGRATIONS.md): where the database is, the keys that
+ * protect what is stored in it, and this server's own addresses. Everything else is in the database.
+ */
 export const BOOTSTRAP_ENV = [
   { name: 'DATABASE_URL', why: 'Where the database is.' },
   { name: 'JWT_SECRET', why: 'Signs sign-in sessions.' },

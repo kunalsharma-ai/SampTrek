@@ -1,6 +1,6 @@
 # Direct sync to Xero, QuickBooks Online and Tally Prime
 
-> **Now set up in the app.** The Xero and QuickBooks apps and the Tally address are entered in **Settings → Integrations** by the organisation that runs the server (see `docs/INTEGRATIONS.md`). Each organisation still presses Connect on the Accounting page. The environment variables are an optional fallback.
+> **Now set up in the app.** The Xero and QuickBooks apps and the Tally address are entered in **Settings → Integrations** by the organisation that runs the server (see `docs/INTEGRATIONS.md`). Each organisation still presses Connect on the Accounting page. Keys are no longer read from the server environment: the variable names below are the field names in the app, and values left in an old `.env` are copied into the database once when the API starts (docs/INTEGRATIONS.md).
 
 SampTrek can send client invoices, vendor bills, their payments and voids straight into Xero, QuickBooks Online or Tally Prime, the same way it already does for Zoho Books (docs/ZOHO_BOOKS.md). It is on the **Accounting** page under **Xero, QuickBooks and Tally sync**. The CSV and XML exports stay available for every system.
 

@@ -366,10 +366,23 @@ model IntegrationSetting {
   lastTestOk      Boolean?
   lastTestMessage String?
   updatedById     String?
+  /// Server owner only, for email, AI, IP reputation and SampBidx: also used by every organisation
+  /// that has not set up its own (what a shared .env value did before keys moved to the database).
+  serverDefault   Boolean      @default(false)
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
 
   @@unique([organizationId, kind])
+}
+
+/// One row per integration whose old .env values were copied into Settings → Integrations
+/// (docs/INTEGRATIONS.md). Its id is the integration kind, so the copy runs once and a setting the
+/// admins later remove is not brought back from a leftover .env line.
+model EnvImport {
+  id             String   @id @map("_id")
+  organizationId String
+  keys           String[]
+  importedAt     DateTime @default(now())
 }
 
 enum Role {

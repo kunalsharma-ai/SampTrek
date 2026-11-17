@@ -7,6 +7,9 @@ import request from 'supertest';
 import { AppModule } from '../../src/app.module';
 import { configureApp } from '../../src/bootstrap';
 import { PrismaService } from '../../src/prisma/prisma.service';
+import { encryptSecret } from '../../src/auth/totp';
+import { config } from '../../src/common/config';
+import { IntegrationKind, KIND } from '../../src/integrations/catalog';
 
 export async function createApp() {
   const mod = await Test.createTestingModule({ imports: [AppModule] }).compile();
@@ -37,7 +40,30 @@ function orgModels(): string[] {
 
 export async function resetDb(prisma: PrismaClient) {
   const names = orgModels();
-  await Promise.all(names.map((name) => prisma.$runCommandRaw({ delete: name, deletes: [{ q: {}, limit: 0 }] })));
+  await Promise.all([...names, 'EnvImport'].map((name) => prisma.$runCommandRaw({ delete: name, deletes: [{ q: {}, limit: 0 }] })));
+}
+
+/**
+ * Saves an integration straight into the database, as Settings → Integrations would (keys live
+ * there, not in the env). `values` uses the old env names; secret fields are sealed like the app does.
+ * Platform integrations belong to the organisation that runs the server (the oldest one in tests).
+ */
+export async function saveIntegration(prisma: PrismaClient, organizationId: string, kind: IntegrationKind, values: Record<string, string | undefined>, opts: { serverDefault?: boolean } = {}) {
+  const def = KIND[kind];
+  const plain: Record<string, string> = {};
+  const secrets: Record<string, string> = {};
+  for (const [k, v] of Object.entries(values)) {
+    if (v === undefined) continue;
+    if (def.fields.find((f) => f.key === k)?.type === 'secret') secrets[k] = v;
+    else plain[k] = v;
+  }
+  const sealed = Object.keys(secrets).length ? encryptSecret(JSON.stringify(secrets), `integrations:${config.integrationsEncryptionKey}`) : null;
+  const data = { values: plain, secrets: sealed, serverDefault: opts.serverDefault ?? false };
+  await prisma.integrationSetting.upsert({ where: { organizationId_kind: { organizationId, kind } }, create: { organizationId, kind, ...data }, update: data });
+}
+
+export async function removeIntegration(prisma: PrismaClient, kind: IntegrationKind) {
+  await prisma.integrationSetting.deleteMany({ where: { kind } });
 }
 
 export const PASSWORD = 'correct-horse-battery';

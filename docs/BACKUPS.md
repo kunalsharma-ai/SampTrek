@@ -105,8 +105,9 @@ Without SampTrek at all, a plain archive restores with MongoDB's tools (then run
 - The database user needs read and write on the database, and to create and drop its collections (the `dbOwner` role), to restore.
 - Keep a safe copy of `MFA_ENCRYPTION_KEY`: saved integration secrets in a restored database can only
   be read with the same key.
-- Fallback for servers set up before this: `BACKUP_TARGET`, `BACKUP_DIR`, `BACKUP_S3_*` and
-  `BACKUP_PASSPHRASE` in the environment are used while nothing is saved in the app.
+- Servers set up before this with `BACKUP_TARGET`, `BACKUP_DIR`, `BACKUP_S3_*` and `BACKUP_PASSPHRASE`
+  in `.env`: the API copies them into Settings → Integrations once on start and then stops reading them.
+  `BACKUP_PASSPHRASE` can still be set for a single `pnpm restore-backup` command on a new server.
 - `BACKUP_SCHEDULER_ENABLED=false` turns the schedule off on a server (tests do this).
 
 ## API (Super Admin only)

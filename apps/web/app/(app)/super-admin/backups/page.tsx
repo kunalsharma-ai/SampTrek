@@ -17,7 +17,7 @@ interface Settings { schedule: 'off' | 'daily' | 'weekly'; hour: number; weekday
 interface Restore { backupId: string; backupName: string; by: string; startedAt: string; finishedAt: string | null; state: 'running' | 'ok' | 'failed'; step: string; message: string | null; safetyBackup: string | null }
 interface Data {
   settings: Settings; nextRunAt: string | null;
-  storage: { configured: boolean; error: string | null; target: 'local' | 's3' | null; where: string | null; encrypted: boolean; source: 'app' | 'env' | null; lastTestOk: boolean | null; lastTestAt: string | null; lastTestMessage: string | null };
+  storage: { configured: boolean; error: string | null; target: 'local' | 's3' | null; where: string | null; encrypted: boolean; source: 'app' | 'shared' | null; lastTestOk: boolean | null; lastTestAt: string | null; lastTestMessage: string | null };
   tool: { ok: boolean; message: string }; database: { name: string | null; host: string | null };
   running: 'backup' | 'restore' | null; restore: Restore | null; lastOkAt: string | null; backups: Backup[]; restoreWord: string;
 }

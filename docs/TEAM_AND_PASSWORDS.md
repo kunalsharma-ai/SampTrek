@@ -33,7 +33,7 @@ At least 10 characters, not only digits, and not containing the part of the emai
 
 ## Setup
 
-Emails use the SMTP settings in `apps/api/.env` (see `docs/SCHEDULED_REPORTS.md`: `SMTP_HOST`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM`). Links point at the first `WEB_ORIGIN`, so set it to the public address of the web app.
+Emails use the email settings in Settings → Integrations → Email (Zoho Mail SMTP, see `docs/INTEGRATIONS.md`). Links point at the first `WEB_ORIGIN`, so set it to the public address of the web app.
 
 ## API
 

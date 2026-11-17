@@ -36,9 +36,11 @@ pnpm install --frozen-lockfile
 
 ## 3. Server settings
 
-Copy the examples and fill in **only these values**. Everything else (email, SSO,
-AI copilot, Zoho Books, Xero, QuickBooks, Tally, SampBidx) is set up later in the app
-at **Settings → Integrations**, so leave the "Optional fallbacks" part of the file empty.
+Copy the examples and fill in **only these values**. No API key or secret goes in `.env`:
+email, SSO, the AI copilot, Zoho Books, Xero, QuickBooks, Tally, SampAudience, SampBidx, payment
+gateways, push and backup storage are all entered later in the app at **Settings → Integrations**
+and stored in the database, encrypted. `.env` only holds where the database is, the keys that
+protect what is stored in it, and the server's own addresses.
 
 ```bash
 cp apps/api/.env.example apps/api/.env
@@ -158,7 +160,11 @@ step-by-step help, the redirect URI to copy, and **Save and test**:
 - Sign in with Google, Microsoft and Zoho.
 - AI copilot and voice (Google Gemini).
 - Zoho Books, Xero, QuickBooks Online, Tally Prime.
-- SampBidx link.
+- SampAudience, SampBidx link, Razorpay/Stripe, push notifications, backup storage, IP reputation.
+
+Email and AI are per organisation. If you host other organisations and want them to use your
+mailbox or Gemini key until they add their own, tick **Also use for organisations that have not set
+up their own** on that card.
 
 Captcha keys, the SampBidx webhook secret, alert webhooks and API keys are set under Settings and
 Settings → API and webhooks. Full detail: `docs/INTEGRATIONS.md`.
@@ -173,6 +179,12 @@ pnpm --filter @projexa/api prisma:deploy
 pnpm --filter @projexa/api build && pnpm --filter @projexa/web build
 pm2 restart projexa-api projexa-web
 ```
+
+**Upgrading a server that still has API keys in `apps/api/.env`** (anything besides the variables in
+section 3, such as `SMTP_*`, `GEMINI_API_KEY`, `GOOGLE_CLIENT_*`, `ZOHO_BOOKS_*`, `STRIPE_*`): nothing
+to do by hand. On its first start the API copies them into Settings → Integrations (encrypted, once)
+and stops reading them; its log lists the `.env` lines you can then delete. Check the cards in
+Settings → Integrations show **Connected** or **Server default**.
 
 **Moving an existing server from PostgreSQL to MongoDB** (one time, if it ran a package from before
 PR #74): install MongoDB, set the new `DATABASE_URL`, then copy the data with

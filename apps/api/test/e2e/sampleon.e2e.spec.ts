@@ -11,7 +11,7 @@ import { createHash, createHmac, randomUUID } from 'crypto';
 import { createServer, IncomingMessage, Server } from 'http';
 import { AddressInfo } from 'net';
 import request from 'supertest';
-import { api, createApp, login, makeOrg, resetDb } from './helpers';
+import { api, createApp, login, makeOrg, resetDb, saveIntegration } from './helpers';
 
 const SECRET = 'projexa-client-secret-at-sampleon';
 const AR = 'AR-01JC9Y3V8Q6K2N4R7T0W5X1PRJ';
@@ -76,12 +76,13 @@ describe('SAMPLEON integration', () => {
       });
     });
     await new Promise<void>((r) => mock.listen(0, '127.0.0.1', r));
-    process.env.SAMPLEON_URL = `http://127.0.0.1:${(mock.address() as AddressInfo).port}`;
-    process.env.SAMPLEON_CLIENT_SECRET = SECRET;
+    const sampleonUrl = `http://127.0.0.1:${(mock.address() as AddressInfo).port}`;
 
     ({ app, prisma } = await createApp());
     await resetDb(prisma);
     const a = await makeOrg(prisma, 'alpha');
+    // Settings → Integrations → SampAudience, saved by the organisation that runs the server.
+    await saveIntegration(prisma, a.org.id, 'sampleon', { SAMPLEON_URL: sampleonUrl, SAMPLEON_CLIENT_SECRET: SECRET });
     const b = await makeOrg(prisma, 'bravo');
     pm = api(app, await login(app, a.users.PROJECT_MANAGER.email));
     viewer = api(app, await login(app, a.users.VIEWER.email));

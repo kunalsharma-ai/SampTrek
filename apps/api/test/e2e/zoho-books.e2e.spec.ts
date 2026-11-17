@@ -3,7 +3,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaClient } from '../../src/prisma/client';
 import { clearZohoTokens, Http } from '../../src/accounting/zoho-books.client';
 import { ZohoBooksService } from '../../src/accounting/zoho-books.service';
-import { api, createApp, login, makeOrg, resetDb } from './helpers';
+import { api, createApp, login, makeOrg, removeIntegration, resetDb, saveIntegration } from './helpers';
 
 /** An in-memory Zoho Books that answers the calls the sync makes. */
 function fakeZoho() {
@@ -157,8 +157,8 @@ describe('Payment exports and Zoho Books sync (e2e)', () => {
     const { id: _id, createdAt: _c, updatedAt: _u, lines, ...rest } = await prisma.invoice.findUniqueOrThrow({ where: { id: ids.old } });
     return { ...rest, lines: lines as Prisma.InputJsonValue };
   };
-  const connect = () => {
-    Object.assign(process.env, { ZOHO_BOOKS_CLIENT_ID: '1000.ABC', ZOHO_BOOKS_CLIENT_SECRET: 'secret', ZOHO_BOOKS_REFRESH_TOKEN: 'refresh-abc', ZOHO_BOOKS_ORGANIZATION_ID: '600000123', ZOHO_BOOKS_TENANT: 'zb', ZOHO_BOOKS_DC: 'in' });
+  const connect = async () => {
+    await saveIntegration(prisma, org, 'zoho_books', { ZOHO_BOOKS_CLIENT_ID: '1000.ABC', ZOHO_BOOKS_CLIENT_SECRET: 'secret', ZOHO_BOOKS_REFRESH_TOKEN: 'refresh-abc', ZOHO_BOOKS_ORGANIZATION_ID: '600000123', ZOHO_BOOKS_DC: 'in' });
     zoho = fakeZoho();
     clearZohoTokens();
     svc.http = zoho.http;
@@ -207,7 +207,7 @@ describe('Payment exports and Zoho Books sync (e2e)', () => {
   });
 
   it('shows what is missing when Zoho Books is not set up, and refuses to sync', async () => {
-    for (const k of ['ZOHO_BOOKS_CLIENT_ID', 'ZOHO_BOOKS_CLIENT_SECRET', 'ZOHO_BOOKS_REFRESH_TOKEN', 'ZOHO_BOOKS_ORGANIZATION_ID', 'ZOHO_BOOKS_TENANT']) delete process.env[k];
+    await removeIntegration(prisma, 'zoho_books');
     const s = (await pm.get('/accounting/zoho-books').expect(200)).body;
     expect(s).toMatchObject({ configured: false, boundHere: false, runs: [] });
     expect(s.missing).toContain('ZOHO_BOOKS_REFRESH_TOKEN');
@@ -217,7 +217,7 @@ describe('Payment exports and Zoho Books sync (e2e)', () => {
   });
 
   it('tests the connection and the account names, admins only', async () => {
-    connect();
+    await connect();
     await pm.post('/accounting/zoho-books/test', {}).expect(403);
     const t = (await admin.post('/accounting/zoho-books/test', {}).expect(200)).body;
     expect(t.organization).toEqual({ name: 'Frequent Research (test)', currency: 'USD' });
@@ -226,8 +226,9 @@ describe('Payment exports and Zoho Books sync (e2e)', () => {
     expect(s).toMatchObject({ configured: true, boundHere: true, dataCentre: 'in', apiHost: 'www.zohoapis.in' });
     expect(JSON.stringify(s)).not.toContain('refresh-abc');
     // Another SampTrek organisation cannot use this Zoho Books connection.
-    expect((await other.get('/accounting/zoho-books').expect(200)).body).toMatchObject({ configured: true, boundHere: false, otherTenant: true });
-    expect((await other.post('/accounting/zoho-books/sync', {}).expect(400)).body.message).toMatch(/another SampTrek organisation/);
+    // Saved by this organisation in Settings → Integrations: another organisation does not get it.
+    expect((await other.get('/accounting/zoho-books').expect(200)).body).toMatchObject({ configured: false, boundHere: false, otherTenant: false });
+    expect((await other.post('/accounting/zoho-books/sync', {}).expect(400)).body.message).toMatch(/not set up/);
   });
 
   it('needs a start date before syncing', async () => {

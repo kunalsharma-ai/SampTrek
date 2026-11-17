@@ -11,8 +11,8 @@ export const sampleonFrom = (env: EnvMap) => {
 };
 export type SampleonConfig = ReturnType<typeof sampleonFrom>;
 
-/** Where the settings come from: Settings → Integrations (set by IntegrationsService), else the environment. */
-let source: () => Promise<EnvMap> = async () => process.env;
+/** Where the settings come from: Settings → Integrations (set by IntegrationsService). */
+let source: () => Promise<EnvMap> = async () => ({});
 export const setSampleonSource = (fn: () => Promise<EnvMap>) => { source = fn; };
 
 /** Read on every call so a change in Settings → Integrations applies without a restart. */

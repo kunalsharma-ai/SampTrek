@@ -268,9 +268,9 @@ Applies the frontend design prompt (see `docs/FRONTEND_DESIGN_SYSTEM.md` for the
 ## Milestone 35: every integration set up in the app
 
 - **Settings → Integrations** (`/settings/integrations`, admins): email sending (Zoho Mail SMTP), sign in with Google, Microsoft and Zoho, the Gemini AI copilot, Zoho Books, Xero, QuickBooks Online, Tally Prime and the SampBidx link, all set up on screen. No server files to edit.
-- Each card has step-by-step help with links to where every key comes from, the redirect URI to copy, **Save and test**, and a status: Connected, Server settings, Check settings or Not set up.
+- Each card has step-by-step help with links to where every key comes from, the redirect URI to copy, **Save and test**, and a status: Connected, Server default (shared by the server owner), Check settings or Not set up.
 - Zoho Books needs no curl: paste the grant code and SampTrek gets the refresh token and finds the organisation.
-- Secrets are encrypted at rest, never shown again and never written to the audit log. Old environment variables still work as a fallback, so existing servers keep running.
+- Every API key and secret is kept in the database, encrypted at rest, never shown again and never written to the audit log. `.env` only holds the database address, the master keys and the server addresses; keys left in an old `.env` are copied into the database once on start and then ignored.
 - Only five values stay on the server (database, session key, master encryption key, the two addresses). Details: `docs/INTEGRATIONS.md`.
 
 ## Milestone 36: project from a brief

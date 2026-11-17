@@ -26,8 +26,8 @@ and no second quota counter for SAMPLEON respondents: SAMPLEON's completes are s
    SampAudience**, enters the SampAudience address and that secret (client id defaults to `projexa`),
    saves and presses **Test**. The secret is stored encrypted in the database; no server variable is needed.
 
-Servers set up earlier with `SAMPLEON_URL`, `SAMPLEON_CLIENT_ID` and `SAMPLEON_CLIENT_SECRET` keep working:
-those are the fallback until the connection is saved in Settings.
+Servers set up earlier with `SAMPLEON_URL`, `SAMPLEON_CLIENT_ID` and `SAMPLEON_CLIENT_SECRET` in `.env` keep working:
+the API copies them into Settings → Integrations once on start and then stops reading them.
 
 ## SAMPLEON learns about each project
 

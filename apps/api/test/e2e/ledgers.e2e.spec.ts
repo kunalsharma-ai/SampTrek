@@ -4,7 +4,7 @@ import request from 'supertest';
 import { Http, HttpResponse } from '../../src/accounting/ledger/client';
 import { LedgerService } from '../../src/accounting/ledger/ledger.service';
 import { parseTallyResponse } from '../../src/accounting/ledger/tally';
-import { api, createApp, login, makeOrg, resetDb } from './helpers';
+import { api, createApp, login, makeOrg, removeIntegration, resetDb, saveIntegration } from './helpers';
 
 const res = (status: number, body: unknown, headers: Record<string, string> = {}): HttpResponse => ({
   status,
@@ -280,7 +280,7 @@ describe('Direct sync to Xero, QuickBooks Online and Tally Prime (e2e)', () => {
   const since = (p: string) => admin.put(`/accounting/ledgers/${p}/settings`, { hourly: false, since: '2026-10-01', invoices: true, bills: true, payments: true }).expect(200);
 
   it('shows each system as not set up and refuses to connect or sync', async () => {
-    for (const k of ['XERO_CLIENT_ID', 'XERO_CLIENT_SECRET', 'QUICKBOOKS_CLIENT_ID', 'QUICKBOOKS_CLIENT_SECRET', 'TALLY_URL', 'TALLY_TENANT']) delete process.env[k];
+    for (const k of ['xero', 'quickbooks', 'tally'] as const) await removeIntegration(prisma, k);
     const list = (await pm.get('/accounting/ledgers').expect(200)).body;
     expect(list.map((c: { provider: string; configured: boolean; connected: boolean }) => [c.provider, c.configured, c.connected])).toEqual([['xero', false, false], ['quickbooks', false, false], ['tally', false, false]]);
     expect(list[0].redirectUri).toBe('http://api.samptrek.test/api/v1/accounting/ledgers/xero/callback');
@@ -296,8 +296,8 @@ describe('Direct sync to Xero, QuickBooks Online and Tally Prime (e2e)', () => {
 
   describe('Xero', () => {
     let xero: ReturnType<typeof fakeXero>;
-    beforeAll(() => {
-      Object.assign(process.env, { XERO_CLIENT_ID: 'xero-client', XERO_CLIENT_SECRET: 'xero-secret' });
+    beforeAll(async () => {
+      await saveIntegration(prisma, org, 'xero', { XERO_CLIENT_ID: 'xero-client', XERO_CLIENT_SECRET: 'xero-secret' });
       xero = fakeXero();
       svc.http = xero.http;
     });
@@ -397,7 +397,7 @@ describe('Direct sync to Xero, QuickBooks Online and Tally Prime (e2e)', () => {
   describe('QuickBooks Online', () => {
     let qb: ReturnType<typeof fakeQuickBooks>;
     beforeAll(async () => {
-      Object.assign(process.env, { QUICKBOOKS_CLIENT_ID: 'qb-client', QUICKBOOKS_CLIENT_SECRET: 'qb-secret' });
+      await saveIntegration(prisma, org, 'quickbooks', { QUICKBOOKS_CLIENT_ID: 'qb-client', QUICKBOOKS_CLIENT_SECRET: 'qb-secret' });
       qb = fakeQuickBooks();
       svc.http = qb.http;
       await prisma.ledgerLink.deleteMany({});
@@ -457,7 +457,7 @@ describe('Direct sync to Xero, QuickBooks Online and Tally Prime (e2e)', () => {
   describe('Tally Prime', () => {
     let tally: ReturnType<typeof fakeTally>;
     beforeAll(async () => {
-      Object.assign(process.env, { TALLY_URL: 'http://tally.office.lan:9000', TALLY_TENANT: 'led' });
+      await saveIntegration(prisma, org, 'tally', { TALLY_URL: 'http://tally.office.lan:9000' });
       tally = fakeTally();
       svc.http = tally.http;
       await prisma.ledgerLink.deleteMany({});
@@ -473,7 +473,8 @@ describe('Direct sync to Xero, QuickBooks Online and Tally Prime (e2e)', () => {
     it('is bound to one organisation and posts vouchers in the reporting currency', async () => {
       const mine = (await pm.get('/accounting/ledgers').expect(200)).body[2];
       expect(mine).toMatchObject({ configured: true, connected: true, company: 'tally.office.lan:9000' });
-      expect((await other.get('/accounting/ledgers').expect(200)).body[2]).toMatchObject({ otherTenant: true, connected: false });
+      // Saved by this organisation in Settings → Integrations: another organisation does not get it.
+      expect((await other.get('/accounting/ledgers').expect(200)).body[2]).toMatchObject({ configured: false, otherTenant: false, connected: false });
       await other.put('/accounting/ledgers/tally/settings', { hourly: false, since: '2026-10-01', invoices: true, bills: true, payments: true }).expect(200);
       await other.post('/accounting/ledgers/tally/sync', {}).expect(400);
       const t = (await admin.post('/accounting/ledgers/tally/test').expect(200)).body;
