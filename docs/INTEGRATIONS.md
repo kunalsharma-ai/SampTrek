@@ -6,7 +6,7 @@ Every integration is set up by an admin in the app at **Settings → Integration
 | --- | --- | --- |
 | Email sending (Zoho Mail SMTP) | Each organisation's admin | Signs in to the SMTP server and sends a test email to you |
 | Sign in with Google / Microsoft / Zoho | Admins of the organisation that runs the server | Asks the provider's token endpoint whether it accepts the client ID and secret |
-| AI copilot and voice (Google Gemini) | Each organisation's admin | The key is accepted and the chosen models are available to it |
+| Google Gemini, Anthropic Claude, OpenAI, Groq, OpenRouter, Mistral, DeepSeek, own AI server (Ollama or any OpenAI-compatible API) | Each organisation's admin | The key is accepted and the chosen models are available to it. Several can be set up; the copilot tries them in the order set in Settings → AI copilot (docs/AI_COPILOT.md) |
 | Zoho Books | Each organisation's admin | Refreshes the token and finds the Books organisation |
 | Xero, QuickBooks Online | Admins of the organisation that runs the server (the app); each organisation then presses Connect on the Accounting page for its own company | Asks Xero/Intuit whether they accept the client ID and secret |
 | Tally Prime | Admins of the organisation that runs the server only | Lists the companies open in Tally |
@@ -27,7 +27,7 @@ For the same reason, only the server owner can point the SMTP server at a privat
 
 ## Sharing a default with every organisation
 
-Email, AI (Gemini), IP and proxy reputation and the SampBidx link are set per organisation. On these cards the server owner's admins also see **Also use for organisations that have not set up their own**. When it is ticked, every organisation without its own setting uses the owner's one (the card shows **Server default**). Those organisations never see the mailbox, key or other values, and saving their own setting replaces the default for them. This is what one shared value in `.env` used to do.
+Email, AI (every provider), IP and proxy reputation and the SampBidx link are set per organisation. On these cards the server owner's admins also see **Also use for organisations that have not set up their own**. When it is ticked, every organisation without its own setting uses the owner's one (the card shows **Server default**). Those organisations never see the mailbox, key or other values, and saving their own setting replaces the default for them. This is what one shared value in `.env` used to do.
 
 ## Zoho Books without curl
 
@@ -41,7 +41,7 @@ Paste the Self Client ID and secret, then the **grant code** from the API consol
 
 ## Servers that still have keys in .env
 
-Older servers kept keys in `.env` (`SMTP_*`, `GOOGLE_*`, `MICROSOFT_*`, `ZOHO_CLIENT_*`, `GEMINI_API_KEY`/`AI_*`, `ZOHO_BOOKS_*`, `XERO_*`, `QUICKBOOKS_*`, `TALLY_*`, `SAMPLEON_*`, `RAZORPAY_*`, `STRIPE_*`, `EXPO_*`, `BACKUP_*`, `PROXYCHECK_API_KEY`). SampTrek no longer reads them. Instead, the first time the API starts after the upgrade it copies each one into Settings → Integrations, encrypted, once:
+Older servers kept keys in `.env` (`SMTP_*`, `GOOGLE_*`, `MICROSOFT_*`, `ZOHO_CLIENT_*`, `GEMINI_API_KEY`/`AI_*`, `ZOHO_BOOKS_*`, `XERO_*`, `QUICKBOOKS_*`, `TALLY_*`, `SAMPLEON_*`, `RAZORPAY_*`, `STRIPE_*`, `EXPO_*`, `BACKUP_*`, `PROXYCHECK_API_KEY`). SampTrek no longer reads them (the AI providers added on 2026-11-18 were never read from `.env`). Instead, the first time the API starts after the upgrade it copies each one into Settings → Integrations, encrypted, once:
 
 - Platform settings (sign-in apps, Xero, QuickBooks, SampAudience, payments, push, backups) go to the organisation that runs the server.
 - Zoho Books and Tally go to the organisation their `ZOHO_BOOKS_TENANT` / `TALLY_TENANT` names.
@@ -77,4 +77,4 @@ All admin-only, under `/api/v1/integrations/settings`:
 - `DELETE /:kind` – remove the saved settings and their keys from the database
 - `POST /:kind/test` – `{ ok, message, integration }`
 
-Kinds: `sampleon`, `smtp`, `sso_google`, `sso_microsoft`, `sso_zoho`, `gemini`, `zoho_books`, `xero`, `quickbooks`, `tally`, `bidzo` (the SampBidx link; the kind keeps its old name, see docs/SAMPBIDX_INTEGRATION.md), `razorpay`, `stripe`, `push`, `backup_storage`, `ip_reputation`.
+Kinds: `sampleon`, `smtp`, `sso_google`, `sso_microsoft`, `sso_zoho`, `gemini`, `anthropic`, `openai`, `groq`, `openrouter`, `mistral`, `deepseek`, `openai_compatible`, `zoho_books`, `xero`, `quickbooks`, `tally`, `bidzo` (the SampBidx link; the kind keeps its old name, see docs/SAMPBIDX_INTEGRATION.md), `razorpay`, `stripe`, `push`, `backup_storage`, `ip_reputation`.

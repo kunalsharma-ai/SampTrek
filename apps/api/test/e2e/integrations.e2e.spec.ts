@@ -56,7 +56,7 @@ describe('Settings → Integrations (e2e)', () => {
     await pm.get('/integrations/settings').expect(403);
     const r = (await admin.get('/integrations/settings').expect(200)).body;
     expect(r.owner).toBe(true);
-    expect(r.integrations.map((i: { kind: string }) => i.kind)).toEqual(['sampleon', 'smtp', 'sso_google', 'sso_microsoft', 'sso_zoho', 'gemini', 'zoho_books', 'xero', 'quickbooks', 'tally', 'bidzo', 'razorpay', 'stripe', 'push', 'backup_storage', 'ip_reputation']);
+    expect(r.integrations.map((i: { kind: string }) => i.kind)).toEqual(['sampleon', 'smtp', 'sso_google', 'sso_microsoft', 'sso_zoho', 'gemini', 'anthropic', 'openai', 'groq', 'openrouter', 'mistral', 'deepseek', 'openai_compatible', 'zoho_books', 'xero', 'quickbooks', 'tally', 'bidzo', 'razorpay', 'stripe', 'push', 'backup_storage', 'ip_reputation']);
     const google = r.integrations.find((i: { kind: string }) => i.kind === 'sso_google');
     expect(google.redirectUri).toBe('http://api.samptrek.test/api/v1/auth/sso/google/callback');
     expect(google.steps.join(' ')).toContain('http://api.samptrek.test/api/v1/auth/sso/google/callback');
@@ -167,7 +167,7 @@ describe('Settings → Integrations (e2e)', () => {
     expect((await item(admin, 'stripe')).status.state).toBe('connected');
     expect((await item(otherAdmin, 'zoho_books')).status.state).toBe('connected');
     expect((await item(otherAdmin, 'smtp')).status.state).toBe('shared');
-    expect((await svc.ai(ownerOrgId))?.apiKey).toBe('app-gemini');
+    expect((await svc.aiProvider(ownerOrgId, 'gemini'))?.apiKey).toBe('app-gemini');
     expect((await prisma.envImport.findMany()).map((r) => r.id).sort()).toEqual(['gemini', 'smtp', 'stripe', 'zoho_books']);
     const logs = await prisma.auditEvent.findMany({ where: { action: 'integration.imported' } });
     expect(logs).toHaveLength(3);

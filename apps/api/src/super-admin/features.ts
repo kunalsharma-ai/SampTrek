@@ -3,7 +3,7 @@
  * belong to it. The same keys are used by the web app, the Android/iOS app and GET /auth/me/features.
  */
 import { Role } from '@prisma/client';
-import { INTEGRATION_KINDS, isServerOnlyKind } from '../integrations/catalog';
+import { INTEGRATION_KINDS, isExtraAiKind, isServerOnlyKind } from '../integrations/catalog';
 
 const STAFF: Role[] = ['ADMIN', 'PROJECT_MANAGER', 'SALES', 'VIEWER'];
 const EDITORS: Role[] = ['ADMIN', 'PROJECT_MANAGER'];
@@ -33,7 +33,7 @@ export type AccessMode = 'everyone' | 'admins' | 'people' | 'off';
 export const ACCESS_MODES: AccessMode[] = ['everyone', 'admins', 'people', 'off'];
 
 const INTEGRATION_LABEL: Record<string, string> = {
-  smtp: 'Email (Zoho Mail / SMTP)', sso_google: 'Google sign-in', sso_microsoft: 'Microsoft sign-in', sso_zoho: 'Zoho sign-in', gemini: 'Google Gemini AI',
+  smtp: 'Email (Zoho Mail / SMTP)', sso_google: 'Google sign-in', sso_microsoft: 'Microsoft sign-in', sso_zoho: 'Zoho sign-in', gemini: 'AI providers (Gemini, Claude, OpenAI, Groq and others)',
   zoho_books: 'Zoho Books', xero: 'Xero', quickbooks: 'QuickBooks Online', tally: 'Tally Prime', bidzo: 'SampBidx', push: 'Push notifications', ip_reputation: 'IP and proxy reputation',
 };
 
@@ -78,7 +78,8 @@ export const FEATURES: FeatureDef[] = [
   { key: 'settings', label: 'Settings', group: 'Administration', summary: 'Organisation settings, security, sign-in', roles: STAFF, mobile: true, adminControl: false },
   { key: 'portal.client', label: 'Client portal', group: 'Portals', summary: 'Clients see their projects, invoices and files', roles: ['CLIENT_USER'], mobile: true },
   { key: 'portal.vendor', label: 'Vendor portal', group: 'Portals', summary: 'Vendors see links, respondents, bills and quotes', roles: ['VENDOR_USER'], mobile: true },
-  ...INTEGRATION_KINDS.filter((k) => !isServerOnlyKind(k)).map((k): FeatureDef => ({ key: `integration.${k}`, label: INTEGRATION_LABEL[k] ?? k, group: 'Integrations', summary: `May use ${INTEGRATION_LABEL[k] ?? k}`, roles: ADMIN, mobile: false })),
+  // Every AI provider shares integration.gemini, so plans made before more providers existed keep working.
+  ...INTEGRATION_KINDS.filter((k) => !isServerOnlyKind(k) && !isExtraAiKind(k)).map((k): FeatureDef => ({ key: `integration.${k}`, label: INTEGRATION_LABEL[k] ?? k, group: 'Integrations', summary: `May use ${INTEGRATION_LABEL[k] ?? k}`, roles: ADMIN, mobile: false })),
 ];
 
 export const FEATURE_KEYS = FEATURES.map((f) => f.key);

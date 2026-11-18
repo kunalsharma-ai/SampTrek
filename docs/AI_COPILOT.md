@@ -1,30 +1,53 @@
 # AI copilot and voice assistant
 
-> **Now set up in the app.** An admin adds the Gemini API key and models in **Settings → Integrations** (see `docs/INTEGRATIONS.md`). Keys are no longer read from the server environment: the variable names below are the field names in the app, and values left in an old `.env` are copied into the database once when the API starts (docs/INTEGRATIONS.md).
+> **Set up in the app.** An admin adds AI provider keys and models in **Settings → Integrations → AI** (see `docs/INTEGRATIONS.md`) and picks the order under **Settings → AI copilot**. Keys are kept encrypted in the database and are never read from the server environment.
 
-SampTrek's copilot answers questions about projects, fieldwork, tasks, the team and finance, and proposes changes that a person confirms. It talks to the model through a provider-independent gateway (`apps/api/src/ai/provider.ts`). Google Gemini is the first provider (`gemini.provider.ts`); another provider is a new class implementing `AiProvider`.
+SampTrek's copilot answers questions about projects, fieldwork, tasks, the team and finance, reads briefs into project drafts, and proposes changes that a person confirms. It talks to the model through a provider-independent gateway (`apps/api/src/ai/provider.ts`) with three implementations:
 
-## Setup
+| File | Providers |
+| --- | --- |
+| `gemini.provider.ts` | Google Gemini (AI Studio key). The only one with live voice and tap-to-talk speech-to-text. |
+| `anthropic.provider.ts` | Anthropic Claude (Messages API, plain HTTP). |
+| `openai.provider.ts` | Everything with an OpenAI-style chat completions API: OpenAI, Groq, OpenRouter, Mistral, DeepSeek, and an own server (Ollama, LM Studio, vLLM). |
+
+## Providers (added 2026-11-18)
+
+| Integration | Free? | Reads PDFs / images | Default main → fallback model |
+| --- | --- | --- | --- |
+| Google Gemini (`gemini`) | Free tier | Both, plus audio | `gemini-3.8-flash` → `gemini-3.5-flash-lite`, voice `gemini-3.8-live` |
+| Anthropic Claude (`anthropic`) | Paid | Both | `claude-opus-5-5` → `claude-haiku-5-5` |
+| OpenAI (`openai`) | Paid | Both | `gpt-5-mini` → `gpt-5-nano` |
+| Groq (`groq`) | Free tier | Text only | `llama-3.3-70b-versatile` → `llama-3.1-8b-instant` |
+| OpenRouter (`openrouter`) | Free `:free` models | PDFs | `meta-llama/llama-3.3-70b-instruct:free` |
+| Mistral (`mistral`) | Free Experiment plan | Images | `mistral-small-latest` → `open-mistral-nemo` |
+| DeepSeek (`deepseek`) | Low cost | Text only | `deepseek-chat` |
+| Own AI server (`openai_compatible`) | Free (self-hosted) | Text only | set on the card, e.g. `llama3.1` |
+
+Model names move often, so each is a field on the card. **Test** lists the provider's models with the key and says if a chosen model is not there. Pick models that support tool (function) calling. Text files (TXT, Markdown, CSV, HTML, JSON) are sent as text to every provider.
+
+**Order and fallback.** Settings → AI copilot lists the providers in the order they are tried (`aiSettings.providers`; default Gemini, Claude, OpenAI, Groq, OpenRouter, Mistral, DeepSeek, own server). For each question SampTrek tries the first provider's main model, then its fallback model, then the next provider, and so on. It moves on when a provider is busy or its free allowance is used up (429), has no credit (402), refuses the key (401/403, the fallback model of that key is skipped), refuses the request (400/404) or is down. It stops only when the AI declines the message. The tool steps of one question stay with the provider that answered the first step. Every failed try is logged in `AiUsage` (provider, model, error), so the usage table shows which key ran out. Requests with a PDF or image only go to providers that read them; tap-to-talk only goes to Gemini. Live voice needs Gemini; without it the app uses the browser's speech with the normal chat, which works with any provider.
+
+**Own server.** For Ollama run `ollama pull llama3.1`, start it with `OLLAMA_HOST=0.0.0.0`, and enter `http://<host>:11434/v1` with no key. Only the organisation that runs the SampTrek server may enter a private or `http://` address (other organisations need a public `https://` one, checked on save).
+
+**Plans.** One plan feature, `integration.gemini` ("AI providers"), covers every AI provider, so plans made before keep working. The server owner can share any AI card as the server default, like the Gemini card.
+
+## Gemini setup
 
 1. Sign in to Google AI Studio (aistudio.google.com) with the Google account that should own the key, and create an API key in a Google Cloud project used only for SampTrek.
-2. Put it in the API server environment, never in the database or the repo:
+2. Paste it on the **Google Gemini** card in Settings → Integrations, save and press Test.
+3. The copilot appears in the menu and as the sparkle button in the header. Admins can tune it in **Settings → AI copilot**.
 
-   ```
-   GEMINI_API_KEY=...
-   ```
+Fields on the card:
 
-3. Restart the API. The copilot appears in the menu and as the sparkle button in the header. Admins can tune it in **Settings → AI copilot**.
-
-Optional variables:
-
-| Variable | Default | Meaning |
+| Field | Default | Meaning |
 | --- | --- | --- |
 | `AI_MODEL` | `gemini-3.8-flash` | Model for chat, tools and documents |
-| `AI_FALLBACK_MODEL` | `gemini-3.5-flash-lite` | Tried once when the main model returns "rate limited"; empty for none |
+| `AI_FALLBACK_MODEL` | `gemini-3.5-flash-lite` | Tried once when the main model fails, before the next provider |
 | `AI_LIVE_MODEL` | `gemini-3.8-live` | Model for spoken conversations |
-| `GEMINI_API_URL` | `https://generativelanguage.googleapis.com` | Only changed for testing |
 
-Without a Gemini API key in Settings → Integrations (the organisation's own, or the server owner's shared default) the copilot says it is not set up and makes no calls.
+`GEMINI_API_URL`, `ANTHROPIC_API_URL`, `OPENAI_API_URL`, `GROQ_API_URL`, `OPENROUTER_API_URL`, `MISTRAL_API_URL` and `DEEPSEEK_API_URL` in the env only change the address, for tests or a private gateway; they are not keys.
+
+Without any AI provider in Settings → Integrations (the organisation's own, or the server owner's shared default) the copilot says it is not set up and makes no calls.
 
 ## Models, limits and cost (checked 2026-11-02)
 

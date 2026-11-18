@@ -53,7 +53,7 @@ export default function SettingsPage() {
       {isAdmin && (
         <Link href="/settings/integrations" className="card mb-6 flex items-center gap-3 p-4 hover:bg-sunken/50">
           <PlugZap className="h-5 w-5 shrink-0 text-brand" />
-          <span className="min-w-0 flex-1"><span className="block font-medium">Set up integrations</span><span className="block text-sm text-muted">Email (Zoho Mail), Google, Microsoft and Zoho sign-in, Gemini AI, Zoho Books, Xero, QuickBooks, Tally and SampBidx, all from here with step-by-step help.</span></span>
+          <span className="min-w-0 flex-1"><span className="block font-medium">Set up integrations</span><span className="block text-sm text-muted">Email (Zoho Mail), Google, Microsoft and Zoho sign-in, AI providers (Gemini, Claude, OpenAI, Groq and more), Zoho Books, Xero, QuickBooks, Tally and SampBidx, all from here with step-by-step help.</span></span>
           <span className="text-sm text-brand">Open →</span>
         </Link>
       )}

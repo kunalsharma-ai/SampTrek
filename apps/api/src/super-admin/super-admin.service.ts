@@ -11,7 +11,7 @@ import { AuditService } from '../audit/audit.service';
 import { AuthUser } from '../auth/auth.types';
 import { PasswordService } from '../auth/password.service';
 import { randomToken } from '../common/crypto';
-import { CATALOG } from '../integrations/catalog';
+import { CATALOG, isExtraAiKind } from '../integrations/catalog';
 import { IntegrationsService } from '../integrations/integrations.service';
 import { MailService } from '../mail/mail.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -520,7 +520,7 @@ export class SuperAdminService {
           id: o.id, name: o.name, status: o.status, platformOwner: o.platformOwner,
           integrations: Object.fromEntries(CATALOG.map((d) => {
             const r = rows.find((x) => x.organizationId === o.id && x.kind === d.kind);
-            return [d.kind, { allowed: f.web.has(`integration.${d.kind}`), saved: !!r, lastTestOk: r?.lastTestOk ?? null, lastTestAt: r?.lastTestAt ?? null, lastTestMessage: r?.lastTestMessage ?? null, updatedAt: r?.updatedAt ?? null }];
+            return [d.kind, { allowed: f.web.has(`integration.${isExtraAiKind(d.kind) ? 'gemini' : d.kind}`), saved: !!r, lastTestOk: r?.lastTestOk ?? null, lastTestAt: r?.lastTestAt ?? null, lastTestMessage: r?.lastTestMessage ?? null, updatedAt: r?.updatedAt ?? null }];
           })),
         };
       }),

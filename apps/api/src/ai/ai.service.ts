@@ -4,7 +4,7 @@ import { Prisma, Role } from '@prisma/client';
 import { z } from 'zod';
 import { AuditService } from '../audit/audit.service';
 import { AuthUser } from '../auth/auth.types';
-import { AiConfig } from '../common/config';
+import { AI_KINDS, AiConfig, AiKind } from '../common/config';
 import { IntegrationsService } from '../integrations/integrations.service';
 
 import { FinanceService } from '../finance/finance.service';
@@ -16,12 +16,14 @@ import { ProjectsService } from '../projects/projects.service';
 import { ReportsService } from '../reports/reports.service';
 import { TasksService } from '../tasks/tasks.service';
 import { BRIEF_TOOL, briefSystem, normalizeBrief } from './brief';
+import { AnthropicProvider } from './anthropic.provider';
 import { GeminiProvider } from './gemini.provider';
-import { AiProvider, AiProviderError, Http, Message, Part } from './provider';
+import { OpenAiProvider } from './openai.provider';
+import { AiProvider, AiProviderError, GenerateRequest, GenerateResult, Http, Message, Part } from './provider';
 import { Display, toolByName, ToolContext, ToolError, toolsFor } from './tools';
 import { aggregate, countIf, mdate, numOut } from '../prisma/agg';
 
-const NOT_SET_UP = 'The AI copilot is not set up yet. An admin can add a Gemini API key in Settings → Integrations.';
+const NOT_SET_UP = 'The AI copilot is not set up yet. An admin can add an AI provider key (Gemini, Claude, OpenAI, Groq and others) in Settings → Integrations.';
 
 // ───────────── Settings ─────────────
 
@@ -38,10 +40,12 @@ export const aiSettingsSchema = z
     perUserPerMinute: z.number().int().min(1).max(60),
     perUserDaily: z.number().int().min(1).max(5000),
     orgDaily: z.number().int().min(1).max(100_000),
+    /** The order AI providers are tried in. Providers not set up are skipped; ones missing here go last. */
+    providers: z.array(z.enum(AI_KINDS)).max(AI_KINDS.length).refine((a) => new Set(a).size === a.length, 'List each provider once').optional(),
   })
   .strict();
 export type AiSettings = z.infer<typeof aiSettingsSchema>;
-export const DEFAULT_AI_SETTINGS: AiSettings = { enabled: true, roles: [...STAFF_ROLES], actions: true, documents: true, voice: true, perUserPerMinute: 8, perUserDaily: 100, orgDaily: 1000 };
+export const DEFAULT_AI_SETTINGS: AiSettings = { enabled: true, roles: [...STAFF_ROLES], actions: true, documents: true, voice: true, perUserPerMinute: 8, perUserDaily: 100, orgDaily: 1000, providers: [...AI_KINDS] };
 const settingsOf = (v: unknown): AiSettings => ({ ...DEFAULT_AI_SETTINGS, ...((v ?? {}) as Partial<AiSettings>) });
 
 export const chatSchema = z
@@ -81,6 +85,9 @@ const HISTORY = 40;
 const EMPTY_DRAFT_INFO = { name: '', workOrderNo: '', generateWorkOrder: true, type: 'AD_HOC', category: '', clientId: '', clientContactId: '', salesPersonId: '', projectManagerId: '', description: '', bidReference: '', fieldStartAt: '', fieldEndAt: '' };
 
 type Stored = { parts: Part[]; raw?: Message['raw'] };
+/** One provider and model to try. */
+export interface Attempt { p: AiProvider; c: AiConfig; model: string }
+type Usage = { ok: string; failed: string };
 type DisplayCol = { blocks?: Display[]; actions?: string[] };
 
 function startOfDayUtc(d = new Date()) {
@@ -108,11 +115,66 @@ export class AiService {
     private readonly integrations: IntegrationsService,
   ) {}
 
-  /** The Gemini key and models from Settings → Integrations, else the server env. */
-  private async provider(org: string): Promise<{ p: AiProvider; c: AiConfig }> {
-    const c = await this.integrations.ai(org);
-    if (!c) throw new ServiceUnavailableException(NOT_SET_UP);
-    return { p: this.providerOverride ?? new GeminiProvider(c.apiKey, c.apiUrl, this.http), c };
+  /** The provider for one saved setting. Swapped for a fake in tests. */
+  makeProvider(c: AiConfig): AiProvider {
+    if (c.provider === 'gemini') return new GeminiProvider(c.apiKey!, c.apiUrl, this.http);
+    if (c.provider === 'anthropic') return new AnthropicProvider(c, this.http);
+    return new OpenAiProvider(c, this.http);
+  }
+
+  /** The providers set up in Settings → Integrations, in the order chosen under Settings → AI copilot. */
+  async providers(org: string): Promise<AiConfig[]> {
+    const all = await this.integrations.aiProviders(org);
+    const order = (await this.settings(org)).providers ?? [...AI_KINDS];
+    const rank = (k: AiKind) => (order.includes(k) ? order.indexOf(k) : order.length + AI_KINDS.indexOf(k));
+    return all.sort((a, b) => rank(a.provider) - rank(b.provider));
+  }
+
+  /**
+   * What to try, in order: each provider's main model, then its fallback model, then the next provider.
+   * `files`: attached types this request needs read (providers that cannot are left out).
+   */
+  async attempts(org: string, need: { files?: string[]; audio?: boolean } = {}): Promise<Attempt[]> {
+    const list = await this.providers(org);
+    if (!list.length) throw new ServiceUnavailableException(NOT_SET_UP);
+    const fit = list.filter((c) => (!need.audio || c.audio) && (need.files ?? []).every((m) => c.files.includes(m)));
+    if (!fit.length) {
+      if (need.audio) throw new ServiceUnavailableException('Writing down speech needs Google Gemini. An admin can add a Gemini key in Settings → Integrations, or use the browser’s speech instead.');
+      throw new ServiceUnavailableException(`None of the AI providers set up here can read this file (${list.map((c) => c.label).join(', ')}). Gemini, Claude and OpenAI read PDFs and images; or paste the text instead.`);
+    }
+    return fit.flatMap((c) => {
+      const p = this.providerOverride ?? this.makeProvider(c);
+      return [c.model, ...(c.fallbackModel ? [c.fallbackModel] : [])].map((model) => ({ p, c, model }));
+    });
+  }
+
+  /**
+   * Runs one model call, moving down the list when a provider is busy, out of its (free) allowance,
+   * refuses the key or the request. Only a message the AI declines stops it. Starts at `from` so a
+   * conversation keeps to the provider that answered its first step.
+   */
+  async generate(u: AuthUser, list: Attempt[], req: Omit<GenerateRequest, 'model'>, usage: Usage, from = 0): Promise<{ r: GenerateResult; at: number; a: Attempt }> {
+    let last: AiProviderError | null = null;
+    const badKey = new Set<AiProvider>();
+    for (let i = from; i < list.length; i++) {
+      const a = list[i];
+      if (badKey.has(a.p)) continue;
+      try {
+        const r = await a.p.generate({ ...req, model: a.model });
+        await this.usage(u, a.p.id, a.model, usage.ok, r.usage);
+        if (i > from || last) this.log.log(`AI answered with ${a.c.label} ${a.model} after: ${last?.message ?? 'an earlier provider failed'}`);
+        return { r, at: i, a };
+      } catch (e) {
+        if (!(e instanceof AiProviderError)) throw e;
+        await this.usage(u, a.p.id, a.model, usage.failed, null, `${a.c.label}: ${e.message}`);
+        if (e.kind === 'blocked') throw e;
+        if (e.kind === 'auth') badKey.add(a.p);
+        last = e;
+      }
+    }
+    // A request that started part-way down the list may still be answered from the top.
+    if (from > 0) return this.generate(u, list.slice(0, from), req, usage, 0);
+    throw last && list.length > 1 && new Set(list.map((x) => x.c.provider)).size > 1 ? new AiProviderError(`Every AI provider set up here failed. The last one said: ${last.message}`, last.kind, last.status) : last ?? new AiProviderError('No AI provider answered.', 'unavailable');
   }
 
   async settings(org: string) {
@@ -129,7 +191,9 @@ export class AiService {
 
   /** What this person can use, and how much is left today. */
   async status(u: AuthUser) {
-    const c = await this.integrations.ai(u.organizationId);
+    const list = await this.providers(u.organizationId);
+    const c = list[0] ?? null;
+    const live = list.find((x) => x.liveModel) ?? null;
     const s = await this.settings(u.organizationId);
     const since = startOfDayUtc();
     const [mine, org] = await Promise.all([
@@ -140,8 +204,12 @@ export class AiService {
     return {
       configured: !!c,
       provider: c?.provider ?? null,
+      providerLabel: c?.label ?? null,
       model: c?.model ?? null,
-      liveModel: c?.liveModel ?? null,
+      /** Live voice runs on Gemini only; null = the browser's speech is used. */
+      liveModel: live?.liveModel ?? null,
+      /** In the order they are tried. */
+      providers: list.map((x) => ({ kind: x.provider, label: x.label, model: x.model, fallbackModel: x.fallbackModel, files: x.files, voice: !!x.liveModel })),
       enabled: !!c && allowed,
       reason: !c ? 'not_configured' : !s.enabled ? 'turned_off' : !allowed ? 'role' : null,
       features: { actions: s.actions && ['ADMIN', 'PROJECT_MANAGER', 'SALES', 'VIEWER'].includes(u.role), documents: s.documents, voice: s.voice },
@@ -151,7 +219,7 @@ export class AiService {
   }
 
   private async gate(u: AuthUser, feature?: 'documents' | 'voice') {
-    if (!(await this.integrations.ai(u.organizationId))) throw new ServiceUnavailableException(NOT_SET_UP);
+    if (!(await this.integrations.aiProviders(u.organizationId)).length) throw new ServiceUnavailableException(NOT_SET_UP);
     const s = await this.settings(u.organizationId);
     if (!s.enabled) throw new ForbiddenException('An admin has turned the AI copilot off');
     if (!s.roles.includes(u.role as (typeof STAFF_ROLES)[number])) throw new ForbiddenException('The AI copilot is not available for your role');
@@ -261,9 +329,10 @@ export class AiService {
   async chat(u: AuthUser, body: z.infer<typeof chatSchema>) {
     const s = await this.gate(u, body.documentIds.length ? 'documents' : undefined);
     await this.limit(u, s);
-    const { p, c } = await this.provider(u.organizationId);
     const docs = body.documentIds.length ? await this.prisma.aiDocument.findMany({ where: { id: { in: body.documentIds }, userId: u.id, organizationId: u.organizationId } }) : [];
     if (docs.length !== body.documentIds.length) throw new BadRequestException('An attached file was not found');
+    // Files sent as they are (PDF, images) need a provider that reads them; text files are sent as text.
+    const list = await this.attempts(u.organizationId, { files: [...new Set(docs.filter((d) => DOC_TYPES[d.mimeType] === 'inline').map((d) => d.mimeType))] });
     const conv = await this.conversation(u, body.conversationId, body.message);
     const userParts: Part[] = [{ text: body.message }];
     const stored = [...userParts, ...docs.map((d) => ({ document: { id: d.id, name: d.name } }) as unknown as Part)];
@@ -273,22 +342,14 @@ export class AiService {
     const tools = toolsFor(u.role, { actions: s.actions }).map((t) => t.spec);
 
     const created: string[] = [userMsg.id];
-    let model = c.model;
+    let at = 0;
     let final = '';
     try {
       for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-        let r;
-        try {
-          r = await p.generate({ model, system, messages, tools });
-        } catch (e) {
-          if (e instanceof AiProviderError && e.kind === 'rate_limited' && c.fallbackModel && model !== c.fallbackModel) {
-            await this.usage(u, p.id, model, 'chat_tool', null, e.message);
-            model = c.fallbackModel;
-            r = await p.generate({ model, system, messages, tools });
-          } else throw e;
-        }
         // The first call of a question counts toward the limits; follow-up tool rounds are tracked separately.
-        await this.usage(u, p.id, model, round === 0 ? 'chat' : 'chat_tool', r.usage);
+        const step = await this.generate(u, list, { system, messages, tools }, { ok: round === 0 ? 'chat' : 'chat_tool', failed: 'chat_tool' }, at);
+        const r = step.r;
+        at = step.at;
         const assistant: Message = { role: 'assistant', parts: [...(r.text ? [{ text: r.text }] : []), ...r.calls.map((x) => ({ call: x }))], raw: r.raw };
         messages.push(assistant);
         if (!r.calls.length) {
@@ -316,7 +377,6 @@ export class AiService {
       }
     } catch (e) {
       if (e instanceof AiProviderError) {
-        await this.usage(u, p.id, model, 'chat_tool', null, e.message);
         const status = e.kind === 'rate_limited' ? HttpStatus.TOO_MANY_REQUESTS : e.kind === 'auth' ? HttpStatus.SERVICE_UNAVAILABLE : HttpStatus.BAD_GATEWAY;
         // Keep the question so it is not lost, but no half-finished tool exchange.
         await this.prisma.aiMessage.deleteMany({ where: { id: { in: created.slice(1) } } });
@@ -428,26 +488,19 @@ export class AiService {
     const drafts = await this.prisma.projectDraft.count({ where: { organizationId: u.organizationId, ownerId: u.id } });
     if (drafts >= 20) throw new BadRequestException('You have 20 project drafts. Delete one on Create project first.');
     await this.limit(u, s);
-    const { p, c } = await this.provider(u.organizationId);
+    const list = await this.attempts(u.organizationId, { files: doc && DOC_TYPES[doc.mime] === 'inline' ? [doc.mime] : [] });
     const clients = await this.prisma.client.findMany({ where: { organizationId: u.organizationId, status: 'ACTIVE' }, select: { id: true, name: true, code: true }, orderBy: { name: 'asc' }, take: 300 });
     const parts: Part[] = [{ text: 'Here is the brief. Record the project with project_brief.' }, doc ? docPart({ name: doc.name, mimeType: doc.mime, data: doc.data }) : { text: `[Pasted brief]\n${pasted}\n[End of brief]` }];
     const req = { system: briefSystem(new Date().toISOString().slice(0, 10), clients.map((x) => x.name)), messages: [{ role: 'user' as const, parts }], tools: [BRIEF_TOOL], forceTool: BRIEF_TOOL.name, temperature: 0 };
-    let model = c.model;
-    let out: Awaited<ReturnType<AiProvider['generate']>>;
-    for (;;) {
-      try {
-        out = await p.generate({ ...req, model });
-        await this.usage(u, p.id, model, 'brief', out.usage);
-        break;
-      } catch (e) {
-        await this.usage(u, p.id, model, 'brief', null, (e as Error).message);
-        if (e instanceof AiProviderError && (e.kind === 'rate_limited' || e.kind === 'unavailable') && c.fallbackModel && model !== c.fallbackModel) {
-          model = c.fallbackModel;
-          continue;
-        }
-        if (e instanceof AiProviderError) throw new HttpException(e.message, e.kind === 'rate_limited' ? HttpStatus.TOO_MANY_REQUESTS : e.kind === 'blocked' ? HttpStatus.UNPROCESSABLE_ENTITY : HttpStatus.SERVICE_UNAVAILABLE);
-        throw e;
-      }
+    let out: GenerateResult;
+    let model: string;
+    try {
+      const step = await this.generate(u, list, req, { ok: 'brief', failed: 'brief' });
+      out = step.r;
+      model = `${step.a.c.provider}/${step.a.model}`;
+    } catch (e) {
+      if (e instanceof AiProviderError) throw new HttpException(e.message, e.kind === 'rate_limited' ? HttpStatus.TOO_MANY_REQUESTS : e.kind === 'blocked' ? HttpStatus.UNPROCESSABLE_ENTITY : HttpStatus.SERVICE_UNAVAILABLE);
+      throw e;
     }
     const call = out.calls.find((x) => x.name === BRIEF_TOOL.name);
     if (!call) throw new UnprocessableEntityException('The AI could not find a project brief in this. Try a clearer document, or paste the key details.');
@@ -486,17 +539,23 @@ export class AiService {
   async voiceSession(u: AuthUser, body: z.infer<typeof voiceSessionSchema>) {
     const s = await this.gate(u, 'voice');
     await this.limit(u, s);
-    const { p, c } = await this.provider(u.organizationId);
-    if (!p.liveSession) throw new ServiceUnavailableException('This AI provider has no live voice');
+    // Live voice is Gemini only. Without it the app uses the browser's speech with the normal chat.
+    const c = (await this.providers(u.organizationId)).find((x) => x.liveModel);
+    if (!c) {
+      if (!(await this.integrations.aiProviders(u.organizationId)).length) throw new ServiceUnavailableException(NOT_SET_UP);
+      throw new HttpException({ message: 'Live voice needs Google Gemini, so the browser’s speech is used with your other AI provider.', fallback: 'browser' }, HttpStatus.BAD_GATEWAY);
+    }
+    const p = this.providerOverride ?? this.makeProvider(c);
+    if (!p.liveSession) throw new HttpException({ message: 'This AI provider has no live voice', fallback: 'browser' }, HttpStatus.BAD_GATEWAY);
     const conv = await this.conversation(u, body.conversationId, 'Voice conversation');
     try {
-      const live = await p.liveSession({ model: c.liveModel, system: await this.system(u, body.path, true), tools: toolsFor(u.role, { actions: s.actions }).map((t) => t.spec), startWithin: 60, lastFor: 15 * 60 });
-      await this.usage(u, p.id, c.liveModel, 'voice', null);
+      const live = await p.liveSession({ model: c.liveModel!, system: await this.system(u, body.path, true), tools: toolsFor(u.role, { actions: s.actions }).map((t) => t.spec), startWithin: 60, lastFor: 15 * 60 });
+      await this.usage(u, p.id, c.liveModel!, 'voice', null);
       await this.audit.record({ organizationId: u.organizationId, actorId: u.id, action: 'ai.voice.session', entityType: 'AiConversation', entityId: conv.id });
       return { conversationId: conv.id, title: conv.title, url: live.url, setup: live.setup, expiresAt: live.expiresAt, model: c.liveModel };
     } catch (e) {
       if (e instanceof AiProviderError) {
-        await this.usage(u, p.id, c.liveModel, 'voice', null, e.message);
+        await this.usage(u, p.id, c.liveModel!, 'voice', null, e.message);
         throw new HttpException({ message: e.message, conversationId: conv.id, fallback: 'browser' }, e.kind === 'rate_limited' ? HttpStatus.TOO_MANY_REQUESTS : HttpStatus.BAD_GATEWAY);
       }
       throw e;
@@ -514,28 +573,19 @@ export class AiService {
     if (!VOICE_AUDIO_TYPES.includes(mime)) throw new BadRequestException('Send the recording as WAV, MP3, M4A, AAC, OGG or WebM');
     if (file.size > MAX_VOICE_BYTES) throw new BadRequestException('Keep a question under about a minute');
     await this.limit(u, s);
-    const { p, c } = await this.provider(u.organizationId);
+    const list = await this.attempts(u.organizationId, { audio: true });
     const req = {
       system: 'You write down speech. Reply with exactly the words the person said, in the language they spoke, with normal punctuation. No quotes, notes or answers. If nothing can be understood, reply with nothing.',
       messages: [{ role: 'user' as const, parts: [{ file: { mimeType: mime, data: file.buffer.toString('base64'), name: 'question' } }, { text: 'Write down what I said.' }] as Part[] }],
       tools: [],
       temperature: 0,
     };
-    let model = c.model;
-    for (;;) {
-      try {
-        const out = await p.generate({ ...req, model });
-        await this.usage(u, p.id, model, 'voice', out.usage);
-        return { text: out.text.trim().replace(/^["“]|["”]$/g, '').slice(0, 4000) };
-      } catch (e) {
-        await this.usage(u, p.id, model, 'voice', null, (e as Error).message);
-        if (e instanceof AiProviderError && (e.kind === 'rate_limited' || e.kind === 'unavailable') && c.fallbackModel && model !== c.fallbackModel) {
-          model = c.fallbackModel;
-          continue;
-        }
-        if (e instanceof AiProviderError) throw new HttpException(e.message, e.kind === 'rate_limited' ? HttpStatus.TOO_MANY_REQUESTS : e.kind === 'blocked' ? HttpStatus.UNPROCESSABLE_ENTITY : HttpStatus.SERVICE_UNAVAILABLE);
-        throw e;
-      }
+    try {
+      const { r } = await this.generate(u, list, req, { ok: 'voice', failed: 'voice' });
+      return { text: r.text.trim().replace(/^["“]|["”]$/g, '').slice(0, 4000) };
+    } catch (e) {
+      if (e instanceof AiProviderError) throw new HttpException(e.message, e.kind === 'rate_limited' ? HttpStatus.TOO_MANY_REQUESTS : e.kind === 'blocked' ? HttpStatus.UNPROCESSABLE_ENTITY : HttpStatus.SERVICE_UNAVAILABLE);
+      throw e;
     }
   }
 

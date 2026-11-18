@@ -18,7 +18,7 @@ import { CurrentUser, Roles } from '../auth/decorators';
 import { AuthUser } from '../auth/auth.types';
 import { decryptSecret, encryptSecret } from '../auth/totp';
 import { providerSettings, ProviderSettings, SsoProvider } from '../auth/oidc';
-import { aiFrom, AiConfig, config, EnvMap, ledgersFrom, smtpFrom, SmtpConfig, zohoBooksFrom, ZohoBooksConfig, zohoBooksMissingFrom } from '../common/config';
+import { AI_DEFS, AI_KINDS, aiFrom, AiConfig, AiKind, aiProviderFrom, config, EnvMap, ledgersFrom, smtpFrom, SmtpConfig, zohoBooksFrom, ZohoBooksConfig, zohoBooksMissingFrom } from '../common/config';
 import { ZodPipe } from '../common/zod.pipe';
 import { PrismaService } from '../prisma/prisma.service';
 import { EntitlementsService } from '../super-admin/entitlements';
@@ -26,7 +26,7 @@ import { dumpToolVersion } from '../backups/backup-core';
 import { BackupStorage, s3From, storageFrom } from '../backups/storage';
 import { parseCidrList } from '../survey/fraud';
 import { sampledgeHeaders, sampleonFrom, setSampleonSource } from '../sampleon/sampleon-config';
-import { BOOTSTRAP_ENV, CATALOG, FieldDef, IntegrationKind, isKind, isPaymentKind, isServerOnlyKind, isShareableKind, KIND, KindDef } from './catalog';
+import { BOOTSTRAP_ENV, CATALOG, FieldDef, IntegrationKind, isExtraAiKind, isKind, isPaymentKind, isServerOnlyKind, isShareableKind, KIND, KindDef } from './catalog';
 
 /** app = saved by this organisation (or the server owner, for platform settings); shared = the server owner's default. */
 export type Source = 'app' | 'shared' | null;
@@ -113,6 +113,8 @@ export class IntegrationsService implements OnApplicationBootstrap {
     const out: { kind: IntegrationKind; organizationId: string; keys: string[] }[] = [];
     const leftovers: string[] = [];
     for (const def of CATALOG) {
+      // Added after keys moved into the database: never read from .env.
+      if (isExtraAiKind(def.kind)) continue;
       const keys = def.fields.filter((f) => !f.transient && env[f.key]?.trim()).map((f) => f.key);
       if (!configuredIn(def.kind, env)) continue;
       if (done.has(def.kind)) {
@@ -160,7 +162,8 @@ export class IntegrationsService implements OnApplicationBootstrap {
   /** The Super Admin can take an integration away from an organisation (docs/SUPER_ADMIN.md). */
   async allowed(org: string, kind: IntegrationKind): Promise<boolean> {
     if (isServerOnlyKind(kind)) return true;
-    return this.entitlements.orgAllows(org, `integration.${kind}`);
+    // One plan feature, "AI providers", covers Gemini and every other AI provider.
+    return this.entitlements.orgAllows(org, `integration.${isExtraAiKind(kind) ? 'gemini' : kind}`);
   }
 
   // ───────────── Reading settings (used by the rest of the app) ─────────────
@@ -221,8 +224,21 @@ export class IntegrationsService implements OnApplicationBootstrap {
   async sso(p: SsoProvider): Promise<ProviderSettings | null> {
     return providerSettings(p, (await this.resolve(null, SSO_KIND[p])).env);
   }
-  async ai(org: string): Promise<AiConfig | null> {
-    return aiFrom({ GEMINI_API_URL: process.env.GEMINI_API_URL, ...(await this.resolve(org, 'gemini')).env });
+  /** One AI provider of the organisation (or the shared server default), or null when it is not set up. */
+  async aiProvider(org: string, kind: AiKind): Promise<AiConfig | null> {
+    // Address overrides (GEMINI_API_URL, GROQ_API_URL …) stay in the env for tests and private gateways.
+    const urlKey = kind === 'gemini' ? 'GEMINI_API_URL' : kind === 'openai_compatible' ? null : `${AI_DEFS[kind].prefix}_API_URL`;
+    const env = (await this.resolve(org, kind)).env;
+    return aiProviderFrom(kind, { ...(urlKey ? { [urlKey]: process.env[urlKey] } : {}), ...env });
+  }
+  /** Every AI provider the organisation can use, in the default order (Gemini first). */
+  async aiProviders(org: string): Promise<AiConfig[]> {
+    const out: AiConfig[] = [];
+    for (const k of AI_KINDS) {
+      const c = await this.aiProvider(org, k);
+      if (c) out.push(c);
+    }
+    return out;
   }
   /** Zoho Books for this organisation, or null when it is not set up. */
   async zohoBooks(org: string): Promise<{ config: ZohoBooksConfig | null; missing: string[]; otherTenant: boolean; source: Source }> {
@@ -366,9 +382,17 @@ export class IntegrationsService implements OnApplicationBootstrap {
       let url: URL;
       try { url = new URL(v); } catch { throw new BadRequestException(`${f.label}: enter a full address starting with https://`); }
       // Owner-only settings may point at the server owner's private network (Tally, a MinIO bucket).
-      const httpOk = def.kind === 'tally' || def.kind === 'backup_storage' || config.allowHttpRedirects;
+      const owner = (await this.ownerId()) === u.organizationId;
+      const httpOk = def.kind === 'tally' || def.kind === 'backup_storage' || (def.kind === 'openai_compatible' && owner) || config.allowHttpRedirects;
       if (url.protocol !== 'https:' && !(url.protocol === 'http:' && httpOk)) throw new BadRequestException(`${f.label}: use an https:// address`);
       if (url.username || url.password) throw new BadRequestException(`${f.label}: leave the user name and password out of the address`);
+      // An own AI server on a private network: only the organisation that runs this server may point at it.
+      if (def.kind === 'openai_compatible' && !owner && process.env.NODE_ENV === 'production') {
+        const host = url.hostname.replace(/^\[|\]$/g, '');
+        const ips = isIP(host) ? [host] : await this.lookup(host).catch(() => [] as string[]);
+        if (!ips.length) throw new BadRequestException(`${f.label}: ${host} could not be found`);
+        if (ips.some(isPrivateAddress)) throw new BadRequestException(`${f.label}: use a public address. Only the organisation that runs this server can use a private one.`);
+      }
     }
     if ((f.key === 'IP_ALLOWLIST' || f.key === 'IP_BLOCKLIST') && v) {
       const { bad } = parseCidrList(v);
@@ -470,6 +494,27 @@ export class IntegrationsService implements OnApplicationBootstrap {
     return { ...result, integration: await this.one(u, kind) };
   }
 
+  /** Lists the provider's models with the key: proves the key and the address, and that the models exist. */
+  private async aiModelsCheck(org: string, kind: Exclude<AiKind, 'gemini'>): Promise<TestResult> {
+    const c = await this.aiProvider(org, kind);
+    if (!c) return { ok: false, message: kind === 'openai_compatible' ? 'Enter the API address and model first.' : 'Enter the API key first.' };
+    const headers: Record<string, string> = kind === 'anthropic' ? { 'x-api-key': c.apiKey!, 'anthropic-version': '2023-06-01' } : c.apiKey ? { Authorization: `Bearer ${c.apiKey}` } : {};
+    let r: HttpReply;
+    try {
+      r = await this.http(`${c.apiUrl}${kind === 'anthropic' ? '/v1/models?limit=1000' : '/models'}`, { headers });
+    } catch (e) {
+      return { ok: false, message: `${c.label} could not be reached at ${new URL(c.apiUrl).host}: ${(e as Error).message}` };
+    }
+    const j = safeJson(await r.text()) as { data?: { id: string }[]; error?: { message?: string } | string; message?: string };
+    const why = typeof j.error === 'string' ? j.error : j.error?.message ?? j.message;
+    if (r.status === 401 || r.status === 403) return { ok: false, message: `${c.label} did not accept the API key${why ? `: ${why}` : ''}` };
+    if (r.status !== 200) return { ok: false, message: `${c.label} answered ${r.status}${why ? `: ${why}` : ''}` };
+    const names = new Set((j.data ?? []).map((m) => m.id));
+    const unknown = [c.model, c.fallbackModel].filter((m): m is string => !!m && names.size > 0 && !names.has(m));
+    if (unknown.length) return { ok: false, message: `The key works, but these models are not available to it: ${unknown.join(', ')}. ${names.size ? `For example: ${[...names].slice(0, 6).join(', ')}.` : ''}`.trim() };
+    return { ok: true, message: `${c.label} answered. ${c.model} is available.` };
+  }
+
   // ───────────── Connection tests ─────────────
 
   private async run(u: AuthUser, kind: IntegrationKind): Promise<TestResult> {
@@ -502,9 +547,9 @@ export class IntegrationsService implements OnApplicationBootstrap {
         return this.oauthClientCheck(kind === 'xero' ? 'Xero' : 'QuickBooks', a.tokenUrl, a.clientId, a.clientSecret, ledgerRedirectUri(kind), 'basic');
       }
       case 'gemini': {
-        const c = await this.ai(u.organizationId);
+        const c = await this.aiProvider(u.organizationId, 'gemini');
         if (!c) return { ok: false, message: 'Enter the API key first.' };
-        const r = await this.http(`${c.apiUrl}/v1beta/models?pageSize=1000`, { headers: { 'x-goog-api-key': c.apiKey } });
+        const r = await this.http(`${c.apiUrl}/v1beta/models?pageSize=1000`, { headers: { 'x-goog-api-key': c.apiKey! } });
         const j = safeJson(await r.text()) as { models?: { name: string }[]; error?: { message?: string } };
         if (r.status === 400 || r.status === 401 || r.status === 403) return { ok: false, message: `Google did not accept the API key${j.error?.message ? `: ${j.error.message}` : ''}` };
         if (r.status !== 200) return { ok: false, message: `Google answered ${r.status}${j.error?.message ? `: ${j.error.message}` : ''}` };
@@ -513,6 +558,14 @@ export class IntegrationsService implements OnApplicationBootstrap {
         if (unknown.length) return { ok: false, message: `The key works, but these models are not available to it: ${unknown.join(', ')}. Pick names from Google AI Studio.` };
         return { ok: true, message: `The key works. ${c.model} is available.` };
       }
+      case 'anthropic':
+      case 'openai':
+      case 'groq':
+      case 'openrouter':
+      case 'mistral':
+      case 'deepseek':
+      case 'openai_compatible':
+        return this.aiModelsCheck(u.organizationId, kind);
       case 'zoho_books': {
         const z = await this.zohoBooks(u.organizationId);
         if (!z.config) return { ok: false, message: z.otherTenant ? 'These Zoho Books settings belong to another organisation.' : `Not set up yet. Missing: ${z.missing.join(', ')}` };
@@ -700,6 +753,13 @@ export function configuredIn(kind: IntegrationKind, env: EnvMap): boolean {
     case 'sso_microsoft': return !!providerSettings('microsoft', env);
     case 'sso_zoho': return !!providerSettings('zoho', env);
     case 'gemini': return !!aiFrom(env);
+    case 'anthropic':
+    case 'openai':
+    case 'groq':
+    case 'openrouter':
+    case 'mistral':
+    case 'deepseek':
+    case 'openai_compatible': return !!aiProviderFrom(kind, env);
     case 'zoho_books': return !!zohoBooksFrom(env);
     case 'xero': return !!ledgersFrom(env).xero;
     case 'quickbooks': return !!ledgersFrom(env).quickbooks;

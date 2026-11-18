@@ -9,12 +9,14 @@ export interface AiAction { id: string; tool: string; summary: string; status: '
 export interface ChatMessage { id: string; role: 'user' | 'assistant'; text: string; channel: string; createdAt: string; documents?: { id: string; name: string }[]; displays?: Display[]; actions?: AiAction[] }
 export interface AiDoc { id: string; name: string; mimeType: string; size: number; createdAt: string }
 export interface AiStatus {
-  configured: boolean; provider: string | null; model: string | null; liveModel: string | null; enabled: boolean; reason: 'not_configured' | 'turned_off' | 'role' | null;
+  configured: boolean; provider: string | null; providerLabel: string | null; model: string | null; liveModel: string | null;
+  providers: AiProviderInfo[]; enabled: boolean; reason: 'not_configured' | 'turned_off' | 'role' | null;
   features: { actions: boolean; documents: boolean; voice: boolean };
   usage: { mineToday: number; myDailyLimit: number; orgToday: number; orgDailyLimit: number };
   settings?: AiSettings;
 }
-export interface AiSettings { enabled: boolean; roles: string[]; actions: boolean; documents: boolean; voice: boolean; perUserPerMinute: number; perUserDaily: number; orgDaily: number }
+export interface AiProviderInfo { kind: string; label: string; model: string; fallbackModel: string | null; files: string[]; voice: boolean }
+export interface AiSettings { enabled: boolean; roles: string[]; actions: boolean; documents: boolean; voice: boolean; perUserPerMinute: number; perUserDaily: number; orgDaily: number; providers?: string[] }
 
 export async function uploadDoc(file: File): Promise<AiDoc> {
   const fd = new FormData();
