@@ -399,7 +399,7 @@ export class IntegrationsService implements OnApplicationBootstrap {
       if (bad.length) throw new BadRequestException(`${f.label}: ${bad.slice(0, 3).join(', ')} ${bad.length === 1 ? 'is not an IP address or range' : 'are not IP addresses or ranges'} (for example 203.0.113.7 or 198.51.100.0/24)`);
     }
     if (f.key === 'SMTP_HOST' && v) {
-      if (!/^[a-z0-9.-]+$/i.test(v)) throw new BadRequestException('SMTP server: enter a host name such as smtp.zoho.in');
+      if (!/^[a-z0-9.-]+$/i.test(v)) throw new BadRequestException('SMTP server: enter a host name such as smtppro.zoho.in');
       // Only the server owner may point SampTrek at its own private network.
       if (process.env.NODE_ENV === 'production' && (await this.ownerId()) !== u.organizationId) {
         const ips = await this.lookup(v).catch(() => [] as string[]);
@@ -527,7 +527,7 @@ export class IntegrationsService implements OnApplicationBootstrap {
           await this.smtpCheck(c, me.email, 'SampTrek');
         } catch (e) {
           const m = (e as Error).message;
-          if (/auth|535|credentials/i.test(m)) return { ok: false, message: `${c.host} did not accept the mailbox and password. Use a Zoho app password, and check the server matches your data centre (smtp.zoho.in for India). (${m.slice(0, 160)})` };
+          if (/auth|535|credentials/i.test(m)) return { ok: false, message: `${c.host} did not accept the mailbox and password. Use a Zoho app password, and check the server matches your data centre (smtppro.zoho.in for a company mailbox in India, smtp.zoho.in for a personal one). (${m.slice(0, 160)})` };
           return { ok: false, message: `Could not send through ${c.host}:${c.port}: ${m.slice(0, 200)}` };
         }
         return { ok: true, message: `Signed in to ${c.host} and sent a test email to ${me.email}.` };
