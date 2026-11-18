@@ -172,9 +172,9 @@ export const CATALOG: KindDef[] = [
         key: 'SMTP_HOST',
         label: 'SMTP server',
         type: 'text',
-        default: 'smtp.zoho.com',
-        placeholder: 'smtp.zoho.in',
-        hint: 'Zoho Mail: smtp.zoho.in for accounts in India, smtp.zoho.eu for Europe, smtp.zoho.com for the rest. Any other SMTP server works too.',
+        default: 'smtppro.zoho.in',
+        placeholder: 'smtppro.zoho.in',
+        hint: 'Zoho Mail for an organisation (your own domain) in India: smtppro.zoho.in. Personal Zoho accounts use smtp.zoho.in; other data centres use smtppro.zoho.com or smtppro.zoho.eu. Any other SMTP server works too.',
       },
       { key: 'SMTP_PORT', label: 'Port', type: 'select', default: '465', options: [{ value: '465', label: '465 (SSL, recommended)' }, { value: '587', label: '587 (STARTTLS)' }] },
       { key: 'SMTP_USER', label: 'Mailbox (username)', type: 'email', required: true, placeholder: 'reports@yourcompany.com', hint: 'The full email address of the Zoho mailbox that sends.' },
@@ -184,7 +184,7 @@ export const CATALOG: KindDef[] = [
     steps: [
       'Sign in to Zoho with the mailbox that will send (for example reports@yourcompany.com).',
       'Open My Account → Security → App passwords, choose Generate new password, name it SampTrek and copy it.',
-      'Pick the SMTP server for your Zoho data centre (smtp.zoho.in if you sign in at zoho.in) and keep port 465.',
+      'Keep the SMTP server smtppro.zoho.in and port 465 (SSL) for a company mailbox at zoho.in, or pick the server for your Zoho account type and data centre.',
       'Enter the mailbox and the app password here, save, then press Test. A test email is sent to you.',
     ],
     links: [

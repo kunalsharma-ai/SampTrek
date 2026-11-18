@@ -45,7 +45,20 @@ export class MailService {
     let t = this.cached.get(key);
     if (!t) {
       if (this.cached.size > 50) this.cached.clear();
-      t = nodemailer.createTransport({ host: s.host, port: s.port, secure: s.secure, auth: { user: s.user, pass: s.pass }, connectionTimeout: 15_000, greetingTimeout: 15_000, socketTimeout: 30_000 });
+      // Zoho Mail: host smtppro.zoho.in, port 465, secure: true (SSL/TLS), auth = sending mailbox + app password.
+      // Every value comes from Settings → Integrations (the database); nothing is hard-coded here.
+      t = nodemailer.createTransport({
+        host: s.host,
+        port: s.port,
+        secure: s.secure, // SSL/TLS
+        auth: {
+          user: s.user, // the sending mailbox
+          pass: s.pass,
+        },
+        connectionTimeout: 15_000,
+        greetingTimeout: 15_000,
+        socketTimeout: 30_000,
+      });
       this.cached.set(key, t);
     }
     return t;
