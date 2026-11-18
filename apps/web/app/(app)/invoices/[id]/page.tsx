@@ -11,9 +11,11 @@ import { ErrorBox, Loading } from '@/components/ui';
 import { api, get } from '@/lib/api';
 import { flag } from '@/lib/countries';
 import { downloadFile } from '@/lib/download';
+import { CustomFieldsEditor, type CustomField, type InvoiceTemplate } from '@/components/settings/invoice-design';
+import Link2 from 'next/link';
 
 interface Invoice {
-  id: string; number: string; status: 'DRAFT' | 'SENT' | 'PAID' | 'VOID'; currency: string; subtotal: number; taxName: string | null; taxPercent: number; taxAmount: number; total: number; completes: number; notes: string | null;
+  id: string; number: string; status: 'DRAFT' | 'SENT' | 'PAID' | 'VOID'; currency: string; template: string | null; customFields: CustomField[]; subtotal: number; taxName: string | null; taxPercent: number; taxAmount: number; total: number; completes: number; notes: string | null;
   createdAt: string; issuedAt: string | null; dueAt: string | null; paidAt: string | null; paymentReference: string | null; voidedAt: string | null; overdue: boolean; issuer: string;
   lines: { countryCode: string; description: string; quantity: number; unitPrice: number; amount: number }[];
   project: { id: string; projectCode: string; name: string; workOrderNo: string | null }; client: { id: string; name: string; code: string };
@@ -31,8 +33,14 @@ export default function InvoicePage() {
   const [notes, setNotes] = useState('');
   const [busy, setBusy] = useState(false);
   const [payRef, setPayRef] = useState('');
+  const [fields, setFields] = useState<CustomField[]>([]);
+  const [templates, setTemplates] = useState<InvoiceTemplate[]>([]);
+  const [orgTemplate, setOrgTemplate] = useState('classic');
+  useEffect(() => {
+    get<{ design: { template?: string }; templates: InvoiceTemplate[] }>('/organization/invoice-design').then((r) => { setTemplates(r.templates); setOrgTemplate(r.design?.template ?? 'classic'); }).catch(() => undefined);
+  }, []);
 
-  const load = useCallback(() => get<Invoice>(`/invoices/${id}`).then((x) => { setInv(x); setNotes(x.notes ?? ''); }).catch(setError), [id]);
+  const load = useCallback(() => get<Invoice>(`/invoices/${id}`).then((x) => { setInv(x); setNotes(x.notes ?? ''); setFields(x.customFields ?? []); }).catch(setError), [id]);
   useEffect(() => { load(); }, [load]);
 
   async function change(body: object, confirmText?: string) {
@@ -40,7 +48,9 @@ export default function InvoicePage() {
     setBusy(true);
     setError(null);
     try {
-      setInv(await api<Invoice>(`/invoices/${id}`, { method: 'PATCH', json: body }));
+      const next = await api<Invoice>(`/invoices/${id}`, { method: 'PATCH', json: body });
+      setInv(next);
+      setFields(next.customFields ?? []);
     } catch (e) {
       setError(e);
     } finally {
@@ -50,6 +60,8 @@ export default function InvoicePage() {
 
   if (!inv) return error ? <ErrorBox error={error} /> : <Loading />;
   const notesDirty = (inv.notes ?? '') !== notes;
+  const cleanFields = fields.filter((f) => f.label.trim() && f.value.trim());
+  const fieldsDirty = JSON.stringify(cleanFields) !== JSON.stringify(inv.customFields ?? []);
 
   return (
     <div className="mx-auto max-w-4xl">
@@ -133,6 +145,31 @@ export default function InvoicePage() {
           </table>
         </div>
         <p className="mt-2 text-xs text-muted">{inv.completes} approved completes.{inv.taxAmount > 0 ? '' : ' No tax applied.'}</p>
+        {(inv.customFields ?? []).length > 0 && (
+          <dl className="mt-4 grid grid-cols-1 gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
+            {inv.customFields.map((f, i) => <div key={i} className="flex gap-2"><dt className="text-muted">{f.label}:</dt><dd>{f.value}</dd></div>)}
+          </dl>
+        )}
+        {editable && inv.status === 'DRAFT' && (
+          <div className="no-print mt-6 space-y-4 rounded-lg border border-line p-4">
+            <div className="flex flex-wrap items-end gap-3">
+              <label className="block text-sm">
+                <span className="label">Template for this invoice</span>
+                <select className="input w-auto" value={inv.template ?? ''} disabled={busy} onChange={(e) => change({ template: e.target.value || null })}>
+                  <option value="">Our usual ({templates.find((t) => t.id === orgTemplate)?.name ?? 'Classic'})</option>
+                  {templates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                </select>
+              </label>
+              <Link2 href="/settings#invoice-design" className="pb-2 text-xs text-brand hover:underline">Change the design, signature and stamp</Link2>
+            </div>
+            <div>
+              <div className="label">Extra fields on this invoice</div>
+              <p className="mb-2 text-xs text-muted">For example PO number, vendor code or a reference the client asked for. Fields set in Settings print on every invoice too.</p>
+              <CustomFieldsEditor value={fields} onChange={setFields} disabled={busy} />
+              {fieldsDirty && <button className="btn-ghost mt-2" disabled={busy} onClick={() => change({ customFields: cleanFields })}>Save fields</button>}
+            </div>
+          </div>
+        )}
         {editable && inv.status === 'DRAFT' && <TaxEditor doc={inv} busy={busy} onSave={(b) => change(b)} />}
 
         {editable && inv.status === 'DRAFT' ? (

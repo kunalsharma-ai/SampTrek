@@ -85,7 +85,7 @@ export class VendorPortalController {
   @Get('summary')
   async summary(@CurrentUser() u: AuthUser) {
     const vendorId = await this.vendorId(u);
-    const vendor = await this.prisma.vendor.findUniqueOrThrow({ where: { id: vendorId }, select: { id: true, name: true, code: true } });
+    const { portalHidePayout, ...vendor } = await this.prisma.vendor.findUniqueOrThrow({ where: { id: vendorId }, select: { id: true, name: true, code: true, portalHidePayout: true } });
     const where = { vendorAllocation: { vendorId }, isTest: false };
     const [byStatus, payout, active] = await Promise.all([
       this.prisma.respondentSession.groupBy({ by: ['status'], where, _count: { _all: true } }),
@@ -101,11 +101,14 @@ export class VendorPortalController {
       clicks,
       stats,
       conversion: clicks ? Math.round((stats.COMPLETE / clicks) * 1000) / 10 : 0,
-      payout: {
-        approved: byApproval.APPROVED ?? { completes: 0, payout: 0 },
-        pending: byApproval.PENDING ?? { completes: 0, payout: 0 },
-        rejected: byApproval.REJECTED ?? { completes: 0, payout: 0 },
-      },
+      // The agency can hide amounts from this vendor (Vendors page): counts stay, money goes.
+      hidePayout: portalHidePayout,
+      payout: Object.fromEntries(
+        (['approved', 'pending', 'rejected'] as const).map((k) => {
+          const v = byApproval[k.toUpperCase()] ?? { completes: 0, payout: 0 };
+          return [k, portalHidePayout ? { completes: v.completes, payout: null } : v];
+        }),
+      ),
       currencyNote: 'Payouts are in each market’s currency.',
     };
   }
@@ -117,7 +120,7 @@ export class VendorPortalController {
       where: { vendorId, projectCountry: { project: { status: { in: [...VISIBLE_PROJECT_STATUSES] } } } },
       orderBy: { createdAt: 'desc' },
       include: {
-        vendor: { select: { uidMacro: true } },
+        vendor: { select: { uidMacro: true, portalHidePayout: true } },
         projectCountry: {
           select: {
             countryCode: true, language: true, targetGroup: true, loiMinutes: true, irPercent: true, currency: true, status: true,
@@ -154,7 +157,7 @@ export class VendorPortalController {
         irPercent: a.projectCountry.irPercent,
         status: a.status,
         accepting: live,
-        cpi: a.cpi,
+        cpi: a.vendor.portalHidePayout ? null : a.cpi,
         currency: a.projectCountry.currency,
         targetCompletes: a.targetCompletes,
         completes: a.completes,
@@ -196,7 +199,8 @@ export class VendorPortalController {
         projectCountry: { select: { countryCode: true, currency: true } },
       },
     });
-    return rows.map((r) => ({ ...r, project: forVendor(r.project) }));
+    const hide = (await this.prisma.vendor.findUnique({ where: { id: vendorId }, select: { portalHidePayout: true } }))?.portalHidePayout;
+    return rows.map((r) => ({ ...r, payout: hide ? null : r.payout, project: forVendor(r.project) }));
   }
 
   @Get('callbacks')

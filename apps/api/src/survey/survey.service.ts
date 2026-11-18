@@ -329,9 +329,10 @@ export class SurveyService {
       });
       checks.push(sameDevice ? duplicateOf('duplicate', 'SAME_DEVICE', sameDevice.vendorAllocation.vendorId !== allocation.vendorId) : { check: 'duplicate', ok: true });
     }
-    // Always on, even with duplicate detection off: one IP may have only one open (unfinished) live
-    // session per project, so the survey cannot be run in several tabs or windows at once.
-    if (ipHash) {
+    // On by default, even with duplicate detection off: one IP may have only one open (unfinished)
+    // live session per project, so the survey cannot be run in several tabs or windows at once.
+    // Its own switch ("One open survey per IP") turns it off, per project or per vendor.
+    if (ipHash && security.oneOpenPerIp !== false) {
       const open = await this.prisma.respondentSession.findFirst({
         where: { projectId: project.id, isTest: false, ipHash, status: 'STARTED', expiresAt: { gt: new Date() } },
         select: { id: true, vendorAllocation: { select: { vendorId: true } } },

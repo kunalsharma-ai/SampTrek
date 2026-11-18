@@ -1,5 +1,5 @@
 import { hasFeature, type Features } from '@/lib/types';
-import { MessageCircle, CreditCard, Database, PieChart, Crown, Columns3, Activity, Route, MessagesSquare, ListChecks, ClipboardList, LifeBuoy, Sparkles, BarChart3, BookOpenCheck, Users, HandCoins, Building2, FolderKanban, FormInput, ReceiptText, KeyRound, LayoutDashboard, Palette, PlugZap, PlusCircle, Settings, ShieldCheck, Stamp, ToggleRight, Trophy, Truck, type LucideIcon } from 'lucide-react';
+import { Briefcase, MessageCircle, CreditCard, Database, PieChart, Crown, Columns3, Activity, Route, MessagesSquare, ListChecks, ClipboardList, LifeBuoy, Sparkles, BarChart3, BookOpenCheck, Users, HandCoins, Building2, FolderKanban, FormInput, ReceiptText, KeyRound, LayoutDashboard, Palette, PlugZap, PlusCircle, Settings, ShieldCheck, Stamp, ToggleRight, Trophy, Truck, type LucideIcon } from 'lucide-react';
 
 export type NavGroup = 'Main' | 'Fieldwork' | 'Finance' | 'Workspace' | 'Admin';
 export interface NavItem { href: string; label: string; icon: LucideIcon; group: NavGroup; keywords?: string; editorsOnly?: boolean; adminOnly?: boolean; feature?: string; superAdminOnly?: boolean }
@@ -11,6 +11,8 @@ export interface NavItem { href: string; label: string; icon: LucideIcon; group:
 export const NAV_GROUPS: NavGroup[] = ['Main', 'Fieldwork', 'Finance', 'Workspace', 'Admin'];
 /** Headings shown in the sidebar; null hides the heading. */
 export const NAV_GROUP_LABEL: Record<NavGroup, string | null> = { Main: null, Fieldwork: 'Projects & fieldwork', Finance: 'Finance', Workspace: 'Work', Admin: 'Admin' };
+/** Icon of each main menu; its pages open under it as a sub menu (feedback 2026-11-18). */
+export const NAV_GROUP_ICON: Record<NavGroup, LucideIcon> = { Main: LayoutDashboard, Fieldwork: FolderKanban, Finance: ReceiptText, Workspace: Briefcase, Admin: Settings };
 
 export const NAV: NavItem[] = [
   { href: '/', label: 'Dashboard', icon: LayoutDashboard, group: 'Main', keywords: 'dashboard home command center overview', feature: 'dashboard' },

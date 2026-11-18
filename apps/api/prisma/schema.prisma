@@ -48,6 +48,8 @@ model Organization {
   zohoBooksConfig        Json?
   /// Seller details printed on invoice PDFs: { legalName, address, taxId, email, phone, bankDetails, footer }.
   invoiceProfile         Json?
+  /// Invoice template, colour, field labels, custom fields, signature and stamp (pdf/invoice-templates.ts).
+  invoiceDesign          Json?
   /// AI copilot settings (docs/AI_COPILOT.md): { enabled, voice, documents, actions, roles, perUserDaily, orgDaily }.
   aiSettings             Json?
   /// Fieldwork alert thresholds (src/monitor/monitor.rules.ts); null = defaults.
@@ -537,6 +539,8 @@ model Vendor {
   payoutSharePercent     Float?
   /// Added to every market of each new project automatically (needs payoutSharePercent).
   autoAssign             Boolean      @default(false)
+  /// Hide CPI and payout amounts from this vendor's portal login (feedback 2026-11-18).
+  portalHidePayout       Boolean      @default(false)
   /// The vendor's own link variable: the query name (e.g. "vid") and the placeholder its system fills
   /// (e.g. "{TID}"), so entry links come out as ...?vid={TID}. Used for new allocations; null = "vid" / "[UID]".
   uidParam               String?
@@ -1013,6 +1017,8 @@ model UniqueLinkBatch {
   vendorAllocationId String
   vendorAllocation   VendorAllocation @relation(fields: [vendorAllocationId], references: [id], onDelete: Cascade)
   label              String?
+  /// Put in front of every key of the batch, e.g. "pretest-" → /u/pretest-sU2bEi7q… (feedback 2026-11-18).
+  prefix             String?
   count              Int
   /// Links in the batch stop working after this time (null = no expiry).
   expiresAt          DateTime?
@@ -1281,6 +1287,10 @@ model Invoice {
   /// subtotal + taxAmount.
   total          Float
   notes          String?
+  /// Template for this invoice; null = the organisation's (Settings → Invoice design).
+  template       String?
+  /// This invoice's own extra fields, e.g. [{ label: "PO number", value: "4500012" }].
+  customFields   Json?
   issuedAt       DateTime?
   dueAt          DateTime?
   paidAt         DateTime?

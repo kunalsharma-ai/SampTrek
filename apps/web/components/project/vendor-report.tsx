@@ -57,6 +57,29 @@ const HIDDEN_AT_START = new Set(['statusDetail', 'device']);
  * only; it is not saved and changes no other table.
  */
 export function VendorReport({ projectId, projectCode, vendorId, vendorName, onClose }: { projectId: string; projectCode: string; vendorId: string; vendorName: string; onClose: () => void }) {
+  return <RespondentReport projectId={projectId} projectCode={projectCode} vendorId={vendorId} title={vendorName} onClose={onClose} />;
+}
+
+/** The filters on a fieldwork status card, and in the View data popup. */
+export const STATUS_FILTERS: { value: string; label: string }[] = [
+  { value: '', label: 'All outcomes' },
+  { value: 'COMPLETE', label: 'Completes' },
+  { value: 'STARTED', label: 'In progress' },
+  { value: 'TERMINATE', label: 'Terminates' },
+  { value: 'QUOTA_FULL', label: 'Overquota / quota full' },
+  { value: 'SPEEDER', label: 'Speeders' },
+  { value: 'QUALITY', label: 'Quality, duplicate, security' },
+  { value: 'DUPLICATE', label: 'Duplicates only' },
+  { value: 'SECURITY_REJECT', label: 'Security only' },
+  { value: 'PARTIAL', label: 'Dropouts (partial)' },
+];
+
+/**
+ * Respondents of a project, for one vendor (View report) or every vendor (status cards, View data),
+ * optionally one outcome. Same table, paging, field chooser and download for both.
+ */
+export function RespondentReport({ projectId, projectCode, vendorId, title, status: initialStatus = '', onClose }: { projectId: string; projectCode: string; vendorId?: string; title: string; status?: string; onClose: () => void }) {
+  const [status, setStatus] = useState(initialStatus);
   const [take, setTake] = useState(10);
   const [page, setPage] = useState(0);
   const [q, setQ] = useState('');
@@ -74,12 +97,13 @@ export function VendorReport({ projectId, projectCode, vendorId, vendorName, onC
     const t = setTimeout(() => { setSearch(q.trim()); setPage(0); }, 300);
     return () => clearTimeout(t);
   }, [q]);
-  const params = (extra: Record<string, string>) => new URLSearchParams({ ...(search ? { q: search } : {}), ...(includeTest ? { includeTest: 'true' } : {}), ...extra }).toString();
+  const params = (extra: Record<string, string>) => new URLSearchParams({ ...(search ? { q: search } : {}), ...(includeTest ? { includeTest: 'true' } : {}), ...(status ? { status } : {}), ...extra }).toString();
+  const base = vendorId ? `/projects/${projectId}/vendors/${vendorId}/report` : `/projects/${projectId}/report`;
   useEffect(() => {
     setError(null);
-    get<Report>(`/projects/${projectId}/vendors/${vendorId}/report?${params({ skip: String(page * take), take: String(take) })}`).then(setData).catch(setError);
+    get<Report>(`${base}?${params({ skip: String(page * take), take: String(take) })}`).then(setData).catch(setError);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId, vendorId, page, take, search, includeTest]);
+  }, [base, page, take, search, includeTest, status]);
   useEffect(() => {
     const esc = (e: KeyboardEvent) => e.key === 'Escape' && (chooser ? setChooser(false) : onClose());
     const out = (e: MouseEvent) => chooser && chooserRef.current && !chooserRef.current.contains(e.target as Node) && setChooser(false);
@@ -101,8 +125,8 @@ export function VendorReport({ projectId, projectCode, vendorId, vendorName, onC
     setBusy(true);
     setError(null);
     try {
-      const all = await get<Report>(`/projects/${projectId}/vendors/${vendorId}/report?${params({ all: 'true' })}`);
-      downloadCsv(`${projectCode}-${vendorName.replace(/[^\w-]+/g, '_')}-report.csv`, shown.map((c) => c.label), all.rows.map((r) => shown.map((c) => c.text(r))));
+      const all = await get<Report>(`${base}?${params({ all: 'true' })}`);
+      downloadCsv(`${projectCode}-${title.replace(/[^\w-]+/g, '_')}${status ? `-${status.toLowerCase()}` : ''}-report.csv`, shown.map((c) => c.label), all.rows.map((r) => shown.map((c) => c.text(r))));
     } catch (e) {
       setError(e);
     } finally {
@@ -114,7 +138,7 @@ export function VendorReport({ projectId, projectCode, vendorId, vendorName, onC
     <div className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-black/40 p-3 backdrop-blur-sm sm:p-6" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div role="dialog" aria-modal="true" aria-labelledby="vendor-report-title" className="card w-full max-w-6xl">
         <div className="flex items-center justify-between gap-3 border-b border-line px-5 py-3">
-          <h2 id="vendor-report-title" className="text-base font-semibold">Report · {vendorName}{data && <span className="font-normal text-muted"> · {data.total.toLocaleString()} {data.total === 1 ? 'respondent' : 'respondents'}</span>}</h2>
+          <h2 id="vendor-report-title" className="text-base font-semibold">Report · {title}{status ? ` · ${STATUS_FILTERS.find((f) => f.value === status)?.label ?? status}` : ''}{data && <span className="font-normal text-muted"> · {data.total.toLocaleString()} {data.total === 1 ? 'respondent' : 'respondents'}</span>}</h2>
           <button className="btn-ghost p-1.5" aria-label="Close" onClick={onClose}><X className="h-4 w-4" /></button>
         </div>
         <div className="flex flex-wrap items-center gap-2 border-b border-line px-5 py-3">
@@ -128,6 +152,9 @@ export function VendorReport({ projectId, projectCode, vendorId, vendorName, onC
               {[10, 25, 100].map((n) => <option key={n} value={n}>{n} entries</option>)}
             </select>
           </label>
+          <select className="input w-auto py-1.5 text-xs" value={status} onChange={(e) => { setStatus(e.target.value); setPage(0); }} aria-label="Outcome">
+            {STATUS_FILTERS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
+          </select>
           <label className="flex items-center gap-1.5 text-xs text-muted"><input type="checkbox" checked={includeTest} onChange={(e) => { setIncludeTest(e.target.checked); setPage(0); }} /> Test entries</label>
           <div className="relative" ref={chooserRef}>
             <button className="btn-ghost px-2.5 py-1.5 text-xs" aria-expanded={chooser} onClick={() => setChooser(!chooser)}><Columns3 className="h-3.5 w-3.5" /> Fields ({shown.length}/{cols.length})</button>
@@ -149,7 +176,7 @@ export function VendorReport({ projectId, projectCode, vendorId, vendorName, onC
         {!data ? (
           <div className="p-6"><Loading /></div>
         ) : data.rows.length === 0 ? (
-          <p className="p-8 text-center text-sm text-muted">{search ? 'No respondent matches the search.' : 'No respondents from this vendor yet.'}</p>
+          <p className="p-8 text-center text-sm text-muted">{search ? 'No respondent matches the search.' : status ? 'No respondents with this outcome yet.' : vendorId ? 'No respondents from this vendor yet.' : 'No respondents yet.'}</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[900px]">

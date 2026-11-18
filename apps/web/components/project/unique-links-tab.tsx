@@ -27,6 +27,7 @@ interface AllocationSummary {
 interface Batch {
   id: string;
   label: string | null;
+  prefix?: string | null;
   allocationId: string;
   vendor: string;
   countryCode: string;
@@ -68,9 +69,9 @@ const when = (d: string | null) => (d ? new Date(d).toLocaleString(undefined, { 
 export function UniqueLinksTab({ project, editable }: { project: ProjectDetail; editable: boolean }) {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [links, setLinks] = useState<{ total: number; rows: LinkRow[] } | null>(null);
-  const [filter, setFilter] = useState({ allocationId: '', batchId: '', status: '', q: '' });
+  const [filter, setFilter] = useState({ allocationId: '', batchId: '', prefix: '', status: '', q: '' });
   const [page, setPage] = useState(0);
-  const [form, setForm] = useState({ allocationId: '', count: '100', label: '', expiresAt: '' });
+  const [form, setForm] = useState({ allocationId: '', count: '100', label: '', prefix: '', expiresAt: '' });
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<unknown>(null);
@@ -102,11 +103,12 @@ export function UniqueLinksTab({ project, editable }: { project: ProjectDetail; 
         allocationId: form.allocationId,
         count: Number(form.count),
         ...(form.label.trim() ? { label: form.label.trim() } : {}),
+        ...(form.prefix.trim() ? { prefix: form.prefix.trim() } : {}),
         ...(form.expiresAt ? { expiresAt: new Date(form.expiresAt).toISOString() } : {}),
       });
       setNotice(`${r.created.toLocaleString()} vendor unique links created. Download them below and give one link to each respondent.`);
       setForm({ ...form, label: '', expiresAt: '' });
-      setFilter({ allocationId: '', batchId: r.batch.id, status: '', q: '' });
+      setFilter({ allocationId: '', batchId: r.batch.id, prefix: '', status: '', q: '' });
       setPage(0);
       reload();
     } catch (e) {
@@ -142,7 +144,10 @@ export function UniqueLinksTab({ project, editable }: { project: ProjectDetail; 
   // Grouped by vendor (then market), like the Vendors & links tab.
   const allocations = [...summary.allocations].sort((a, b) => a.vendor.name.localeCompare(b.vendor.name) || market(a.projectCountry.countryCode, a.projectCountry.targetGroup).localeCompare(market(b.projectCountry.countryCode, b.projectCountry.targetGroup)));
   const count = Number(form.count);
-  const canGenerate = !!form.allocationId && Number.isInteger(count) && count >= 1 && count <= summary.maxPerBatch && !busy;
+  const prefixOk = /^[A-Za-z0-9_-]{0,30}$/.test(form.prefix.trim());
+  const shownPrefix = form.prefix.trim() ? (/[-_]$/.test(form.prefix.trim()) ? form.prefix.trim() : `${form.prefix.trim()}-`) : '';
+  const prefixes = [...new Set(summary.batches.map((b) => b.prefix).filter((p): p is string => !!p))].sort();
+  const canGenerate = !!form.allocationId && Number.isInteger(count) && count >= 1 && count <= summary.maxPerBatch && prefixOk && !busy;
 
   return (
     <div className="space-y-6">
@@ -159,7 +164,7 @@ export function UniqueLinksTab({ project, editable }: { project: ProjectDetail; 
           {allocations.length === 0 ? (
             <Empty>Add a vendor on the Vendors &amp; links tab first. Unique links belong to a vendor in a market, so completes, payouts and callbacks are counted correctly.</Empty>
           ) : (
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-6">
               <Field label="Vendor and market">
                 <select className="input" value={form.allocationId} onChange={(e) => setForm({ ...form, allocationId: e.target.value })}>
                   <option value="">Choose…</option>
@@ -168,6 +173,9 @@ export function UniqueLinksTab({ project, editable }: { project: ProjectDetail; 
               </Field>
               <Field label="How many links" hint={`Up to ${summary.maxPerBatch.toLocaleString()} at a time`}>
                 <input className="input" type="number" min={1} max={summary.maxPerBatch} value={form.count} onChange={(e) => setForm({ ...form, count: e.target.value })} />
+              </Field>
+              <Field label="Prefix (optional)" hint={prefixOk ? (shownPrefix ? `Links look like …/u/${shownPrefix}sU2bEi7q…` : 'e.g. pretest or 78-') : 'Letters, numbers, - or _ (up to 30)'}>
+                <input className={clsx('input', !prefixOk && 'border-bad')} maxLength={30} placeholder="e.g. pretest" value={form.prefix} onChange={(e) => setForm({ ...form, prefix: e.target.value })} />
               </Field>
               <Field label="Batch name (optional)">
                 <input className="input" maxLength={120} placeholder="e.g. Wave 1 email list" value={form.label} onChange={(e) => setForm({ ...form, label: e.target.value })} />
@@ -225,17 +233,30 @@ export function UniqueLinksTab({ project, editable }: { project: ProjectDetail; 
       </Section>
 
       {summary.batches.length > 0 && (
-        <Section title="Batches">
+        <Section
+          title="Batches"
+          actions={
+            prefixes.length > 0 ? (
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-xs text-muted">Download by prefix:</span>
+                {prefixes.map((p) => (
+                  <button key={p} className="btn-ghost px-2 py-1 font-mono text-xs" onClick={() => download({ prefix: p })} title={`Every link starting with ${p}`}><Download className="h-3.5 w-3.5" /> {p}</button>
+                ))}
+              </div>
+            ) : undefined
+          }
+        >
           <div className="-mx-5 -mb-5 overflow-x-auto">
             <table className="w-full min-w-[820px]">
               <thead className="border-y border-line bg-sunken/60">
-                <tr><th className="th">Batch</th><th className="th">Vendor and market</th><th className="th text-right">Links</th><th className="th text-right">Unused</th><th className="th text-right">Used</th><th className="th">Expires</th><th className="th">Created</th><th className="th" /></tr>
+                <tr><th className="th">Batch and prefix</th><th className="th">Vendor and market</th><th className="th text-right">Links</th><th className="th text-right">Unused</th><th className="th text-right">Used</th><th className="th">Expires</th><th className="th">Created</th><th className="th" /></tr>
               </thead>
               <tbody className="divide-y divide-line">
                 {summary.batches.map((b) => (
                   <tr key={b.id} className={clsx(filter.batchId === b.id && 'bg-brand/5')}>
                     <td className="td font-medium">
-                      <button className="text-left hover:underline" onClick={() => { setFilter({ allocationId: '', batchId: b.id, status: '', q: '' }); setPage(0); }}>{b.label || 'Untitled batch'}</button>
+                      <button className="text-left hover:underline" onClick={() => { setFilter({ allocationId: '', batchId: b.id, prefix: '', status: '', q: '' }); setPage(0); }}>{b.label || 'Untitled batch'}</button>
+                      {b.prefix && <span className="ml-1.5 chip bg-brand/10 font-mono text-brand">{b.prefix}</span>}
                     </td>
                     <td className="td whitespace-nowrap">{flag(b.countryCode)} {market(b.countryCode, b.targetGroup)} · {b.vendor}</td>
                     <td className="td text-right tabular-nums">{b.count.toLocaleString()}</td>
@@ -266,7 +287,7 @@ export function UniqueLinksTab({ project, editable }: { project: ProjectDetail; 
           </button>
         }
       >
-        <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-4">
+        <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-5">
           <Field label="Vendor and market">
             <select className="input" value={filter.allocationId} onChange={(e) => { setFilter({ ...filter, allocationId: e.target.value, batchId: '' }); setPage(0); }}>
               <option value="">All</option>
@@ -277,6 +298,12 @@ export function UniqueLinksTab({ project, editable }: { project: ProjectDetail; 
             <select className="input" value={filter.batchId} onChange={(e) => { setFilter({ ...filter, batchId: e.target.value }); setPage(0); }}>
               <option value="">All</option>
               {summary.batches.map((b) => <option key={b.id} value={b.id}>{b.label || 'Untitled batch'} ({market(b.countryCode, b.targetGroup)} · {b.vendor})</option>)}
+            </select>
+          </Field>
+          <Field label="Prefix">
+            <select className="input" value={filter.prefix} onChange={(e) => { setFilter({ ...filter, prefix: e.target.value, batchId: '' }); setPage(0); }}>
+              <option value="">All</option>
+              {prefixes.map((p) => <option key={p} value={p}>{p}</option>)}
             </select>
           </Field>
           <Field label="Status">

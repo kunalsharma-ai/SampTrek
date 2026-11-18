@@ -18,13 +18,14 @@ interface Summary {
   clicks: number;
   conversion: number;
   stats: Record<string, number>;
-  payout: Record<'approved' | 'pending' | 'rejected', { completes: number; payout: number }>;
+  payout: Record<'approved' | 'pending' | 'rejected', { completes: number; payout: number | null }>;
+  hidePayout?: boolean;
   currencyNote: string;
 }
 interface Allocation {
   id: string; project: { projectCode: string; name: string; status: string; category: string; devices: Record<string, boolean> };
   countryCode: string; language: string; targetGroup: string | null; loiMinutes: number; irPercent: number; status: string; accepting: boolean;
-  cpi: string; currency: string; targetCompletes: number; completes: number; entryLink: string; testEntryLink: string; stats: Record<string, number>;
+  cpi: string | null; currency: string; targetCompletes: number; completes: number; entryLink: string; testEntryLink: string; stats: Record<string, number>;
   uniqueLinksOnly?: boolean; uniqueLinks?: { total: number; unused: number };
 }
 interface SessionRow {
@@ -71,8 +72,9 @@ export default function VendorPortal() {
     ['Clicks', summary.clicks],
     ['Completes', summary.stats.COMPLETE ?? 0],
     ['Conversion', `${summary.conversion}%`],
-    ['Approved payout', money(summary.payout.approved.payout)],
-    ['Pending payout', money(summary.payout.pending.payout)],
+    ...(summary.hidePayout
+      ? [['Approved completes', summary.payout.approved.completes], ['Awaiting approval', summary.payout.pending.completes]]
+      : [['Approved payout', money(summary.payout.approved.payout)], ['Pending payout', money(summary.payout.pending.payout)]]),
   ];
 
   return (
@@ -87,7 +89,7 @@ export default function VendorPortal() {
         ))}
       </div>
       <p className="mb-6 mt-2 text-xs text-muted">
-        {summary.currencyNote} Rejected completes: {summary.payout.rejected.completes}. Payout becomes final when the client approves a complete.
+        {summary.hidePayout ? `Rejected completes: ${summary.payout.rejected.completes}. A complete counts once the client approves it.` : <>{summary.currencyNote} Rejected completes: {summary.payout.rejected.completes}. Payout becomes final when the client approves a complete.</>}
         {disputable > 0 && (
           <>
             {' '}
@@ -124,7 +126,7 @@ export default function VendorPortal() {
                   <Progress value={a.completes} max={a.targetCompletes} />
                 </div>
                 <dl className="mt-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-5">
-                  <div><dt className="text-xs text-muted">Your CPI</dt><dd className="font-medium">{money(a.cpi, a.currency)}</dd></div>
+                  {a.cpi != null && <div><dt className="text-xs text-muted">Your CPI</dt><dd className="font-medium">{money(a.cpi, a.currency)}</dd></div>}
                   <div><dt className="text-xs text-muted">LOI</dt><dd>{a.loiMinutes} min</dd></div>
                   <div><dt className="text-xs text-muted">IR</dt><dd>{a.irPercent}%</dd></div>
                   <div><dt className="text-xs text-muted">Terminates</dt><dd className="tabular-nums">{a.stats.TERMINATE}</dd></div>
@@ -171,8 +173,8 @@ export default function VendorPortal() {
                   sessions &&
                   downloadCsv(
                     'respondents.csv',
-                    ['UID', 'Project', 'Country', 'Status', 'Approval', 'Payout', 'Currency', 'Test', 'Started'],
-                    sessions.map((s) => [s.vendorRespondentId, s.project.projectCode, s.projectCountry.countryCode, s.status, s.approval, s.payout ?? '', s.projectCountry.currency, s.isTest ? 'yes' : 'no', s.startedAt]),
+                    summary.hidePayout ? ['UID', 'Project', 'Country', 'Status', 'Approval', 'Test', 'Started'] : ['UID', 'Project', 'Country', 'Status', 'Approval', 'Payout', 'Currency', 'Test', 'Started'],
+                    sessions.map((s) => (summary.hidePayout ? [s.vendorRespondentId, s.project.projectCode, s.projectCountry.countryCode, s.status, s.approval, s.isTest ? 'yes' : 'no', s.startedAt] : [s.vendorRespondentId, s.project.projectCode, s.projectCountry.countryCode, s.status, s.approval, s.payout ?? '', s.projectCountry.currency, s.isTest ? 'yes' : 'no', s.startedAt])),
                   )
                 }
               >
@@ -184,7 +186,7 @@ export default function VendorPortal() {
           {!sessions ? <Loading /> : sessions.length === 0 ? <Empty>No respondents yet.</Empty> : (
             <div className="-m-5 overflow-x-auto">
               <table className="w-full min-w-[760px]">
-                <thead className="border-b border-line bg-sunken/60"><tr><th className="th">UID</th><th className="th">Project</th><th className="th">Market</th><th className="th">Status</th><th className="th">Approval</th><th className="th">Payout</th><th className="th">Started</th></tr></thead>
+                <thead className="border-b border-line bg-sunken/60"><tr><th className="th">UID</th><th className="th">Project</th><th className="th">Market</th><th className="th">Status</th><th className="th">Approval</th>{!summary.hidePayout && <th className="th">Payout</th>}<th className="th">Started</th></tr></thead>
                 <tbody className="divide-y divide-line">
                   {sessions.map((s) => (
                     <tr key={s.id} className={s.isTest ? 'opacity-70' : undefined}>
@@ -193,7 +195,7 @@ export default function VendorPortal() {
                       <td className="td">{flag(s.projectCountry.countryCode)} {s.projectCountry.countryCode}</td>
                       <td className="td"><OutcomeChip status={s.status} /></td>
                       <td className="td text-xs">{s.approval === 'NOT_APPLICABLE' ? '–' : s.approval.toLowerCase()}</td>
-                      <td className="td tabular-nums">{s.payout ? money(s.payout, s.projectCountry.currency) : '–'}</td>
+                      {!summary.hidePayout && <td className="td tabular-nums">{s.payout ? money(s.payout, s.projectCountry.currency) : '–'}</td>}
                       <td className="td text-xs text-muted">{new Date(s.startedAt).toLocaleString()}</td>
                     </tr>
                   ))}

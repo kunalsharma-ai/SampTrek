@@ -22,7 +22,7 @@ interface Status {
 interface CaptchaInfo { providers: Record<'turnstile' | 'hcaptcha', { configured: boolean; siteKey: string | null }> }
 interface Summary { entries: number; gate: { required: number; passed: number }; reasons: { reason: string; label: string; status: string; count: number }[]; risk?: { low: number; medium: number; high: number } }
 
-type Key = 'gateSurvey' | 'prescreening' | 'captcha' | 'urlProtection' | 'duplicateDetection' | 'browserFingerprinting' | 'cookieValidation' | 'geolocation' | 'timezoneTracking' | 'browserLanguage' | 'torDetection' | 'proxyDetection' | 'automationDetection' | 'crossProjectDuplicates';
+type Key = 'gateSurvey' | 'prescreening' | 'captcha' | 'urlProtection' | 'duplicateDetection' | 'browserFingerprinting' | 'cookieValidation' | 'geolocation' | 'timezoneTracking' | 'browserLanguage' | 'torDetection' | 'proxyDetection' | 'automationDetection' | 'crossProjectDuplicates' | 'oneOpenPerIp';
 
 const FRAUD_KEYS: Key[] = ['proxyDetection', 'automationDetection', 'crossProjectDuplicates'];
 
@@ -48,6 +48,7 @@ const GROUPS: { title: string; icon: typeof Bot; items: { key: Key; label: strin
     icon: Fingerprint,
     items: [
       { key: 'duplicateDetection', label: 'Duplicate detection', help: 'Same IP address and browser entering this project again, through any vendor.' },
+      { key: 'oneOpenPerIp', label: 'One open survey per IP', help: 'While a respondent from an IP address is still in the survey, nobody else from that address can start it (stops extra tabs and windows). Turn it off to test again and again from one office network. The same respondent ID can never enter twice.' },
       { key: 'browserFingerprinting', label: 'Browser fingerprinting', help: 'Same device, recognised from screen, hardware and browser traits, even after a browser update or a language change.' },
       { key: 'cookieValidation', label: 'Cookie validation', help: 'Needs cookies switched on, and catches the same browser coming back.' },
       { key: 'crossProjectDuplicates', label: 'Across projects', help: 'Same device or browser already took part in another of your projects (rules below).' },
@@ -159,6 +160,12 @@ export function SecurityTab({ project, editable, reload }: { project: ProjectDet
           <p className="mb-4 text-sm text-muted">
             Order for every respondent: entry checks → human check → gate survey → prescreener → browser checks → client survey. Set these before launch. Test links run every check but never block, so QA can click through.
           </p>
+          {editable && (
+            <div className="mb-4 flex flex-wrap gap-2">
+              <button type="button" className="btn-ghost px-2.5 py-1.5 text-xs" onClick={() => setSecurity(Object.fromEntries(Object.keys(security).map((k) => [k, false])) as typeof security)}>Turn every check off</button>
+              <button type="button" className="btn-ghost px-2.5 py-1.5 text-xs" onClick={() => setSecurity(Object.fromEntries(Object.keys(security).map((k) => [k, !FRAUD_KEYS.includes(k as Key) || fraudOn])) as typeof security)}>Turn every check on</button>
+            </div>
+          )}
           <div className="space-y-5">
             {GROUPS.map((g) => (
               <div key={g.title}>

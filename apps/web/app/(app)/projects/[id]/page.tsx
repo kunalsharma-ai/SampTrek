@@ -12,8 +12,9 @@ import { ForecastPanel } from '@/components/project/forecast-panel';
 import { HistoryTab } from '@/components/project/history-tab';
 import { TeamTab } from '@/components/project/team-tab';
 import { SaveTemplate } from '@/components/project/save-template';
-import { AlertTriangle, BadgeCheck, CircleSlash, Clock, CopyPlus, Gauge, Hourglass, LayoutTemplate, MonitorPlay, Percent, Rabbit, Route, ShieldAlert, X } from 'lucide-react';
+import { AlertTriangle, BadgeCheck, Database, CircleSlash, Clock, CopyPlus, Gauge, Hourglass, LayoutTemplate, MonitorPlay, Percent, Rabbit, Route, ShieldAlert, X } from 'lucide-react';
 import { RedirectsPopup } from '@/components/project/redirects-popup';
+import { RespondentReport } from '@/components/project/vendor-report';
 import { DashboardLinksPopup } from '@/components/project/dashboard-links';
 import { StatusMenu } from '@/components/project/status-menu';
 import { CloneProject } from '@/components/project/clone-project';
@@ -50,6 +51,8 @@ export default function ProjectPage() {
   const [cloning, setCloning] = useState(false);
   const [redirectsOpen, setRedirectsOpen] = useState(false);
   const [sharing, setSharing] = useState(false);
+  /** Status card (or View data) whose respondents are open in the report popup; '' = all. */
+  const [dataFor, setDataFor] = useState<{ status: string; title: string } | null>(null);
   const [launch, setLaunch] = useState<ProjectDetail['launch'] | null>(null);
   const [skipped, setSkipped] = useState<string[]>([]);
   useEffect(() => {
@@ -155,6 +158,7 @@ export default function ProjectPage() {
             {editable && <button className="btn-ghost" onClick={() => { setSavingTemplate(!savingTemplate); setCloning(false); }}><LayoutTemplate className="h-4 w-4" /> Save as template</button>}
             {editable && hasFeature(me, 'client_dashboards') && <button className="btn-ghost" onClick={() => setSharing(true)} title="A live, read-only page for your client"><MonitorPlay className="h-4 w-4" /> Client dashboard</button>}
             <button className="btn-ghost" onClick={() => setRedirectsOpen(true)}><Route className="h-4 w-4" /> Redirects</button>
+            <button className="btn-ghost" onClick={() => setDataFor({ status: '', title: 'All respondents' })} title="Every respondent of this project, with search, field chooser and download"><Database className="h-4 w-4" /> View &amp; download data</button>
             <span className="inline-flex items-center gap-1">
               <StatusMenu status={p.status} editable={editable} onChange={setStatus} />
               <InfoTip entry={findHelp('project.statusMenu')} />
@@ -182,6 +186,7 @@ export default function ProjectPage() {
       )}
       {redirectsOpen && <RedirectsPopup project={p} onClose={() => setRedirectsOpen(false)} openTab={(t) => { setRedirectsOpen(false); setTab(t); }} />}
       {sharing && <DashboardLinksPopup project={p} onClose={() => setSharing(false)} />}
+      {dataFor && <RespondentReport key={dataFor.status} projectId={p.id} projectCode={p.projectCode} title={p.projectCode} status={dataFor.status} onClose={() => setDataFor(null)} />}
       {savingTemplate && <SaveTemplate project={p} onClose={() => setSavingTemplate(false)} />}
       {cloning && <CloneProject project={p} onClose={() => setCloning(false)} />}
 
@@ -195,23 +200,33 @@ export default function ProjectPage() {
       </div>
       <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4" aria-label="Fieldwork status">
         {([
-          ['Completes', `${completes} / ${target}`, BadgeCheck, 'tone-violet', null],
-          ['In progress', p.stats.STARTED, Hourglass, 'tone-blue', null],
-          ['Terminates', p.stats.TERMINATE, CircleSlash, 'tone-amber', null],
-          ['Overquota / quota full', p.stats.QUOTA_FULL, Gauge, 'tone-cyan', null],
-          ['Speeders', p.stats.SPEEDER ?? 0, Rabbit, 'tone-pink', p.speederCheck?.enabled ? `faster than ${p.speederCheck.fraction} of LOI` : 'speeder check off'],
-          ['Quality, duplicate, security', p.stats.QUALITY_FAIL + p.stats.DUPLICATE + p.stats.SECURITY_REJECT, ShieldAlert, 'tone-pink', null],
-          ['Avg LOI', avgLoi, Clock, 'tone-blue', `planned ${loi}`],
-          ['Avg IR', avgIr, Percent, 'tone-violet', `planned ${ir}`],
-        ] as const).map(([l, v, Icon, tone, hint]) => (
-          <div key={l} className="card flex min-w-0 items-center gap-3 p-4">
-            <span className={clsx('icon-tile hidden sm:grid', tone)}><Icon className="h-5 w-5" aria-hidden /></span>
-            <div className="min-w-0">
-              <div className="text-xl font-bold tabular-nums">{v}</div>
-              <div className="truncate text-xs text-muted">{l}{hint ? <span className="text-muted/80"> · {hint}</span> : null}</div>
-            </div>
-          </div>
-        ))}
+          ['Completes', `${completes} / ${target}`, BadgeCheck, 'tone-violet', null, 'COMPLETE'],
+          ['In progress', p.stats.STARTED, Hourglass, 'tone-blue', null, 'STARTED'],
+          ['Terminates', p.stats.TERMINATE, CircleSlash, 'tone-amber', null, 'TERMINATE'],
+          ['Overquota / quota full', p.stats.QUOTA_FULL, Gauge, 'tone-cyan', null, 'QUOTA_FULL'],
+          ['Speeders', p.stats.SPEEDER ?? 0, Rabbit, 'tone-pink', p.speederCheck?.enabled ? `faster than ${p.speederCheck.fraction} of LOI` : 'speeder check off', 'SPEEDER'],
+          ['Quality, duplicate, security', p.stats.QUALITY_FAIL + p.stats.DUPLICATE + p.stats.SECURITY_REJECT, ShieldAlert, 'tone-pink', null, 'QUALITY'],
+          ['Avg LOI', avgLoi, Clock, 'tone-blue', `planned ${loi}`, null],
+          ['Avg IR', avgIr, Percent, 'tone-violet', `planned ${ir}`, null],
+        ] as const).map(([l, v, Icon, tone, hint, filter]) => {
+          const body = (
+            <>
+              <span className={clsx('icon-tile hidden sm:grid', tone)}><Icon className="h-5 w-5" aria-hidden /></span>
+              <div className="min-w-0">
+                <div className="text-xl font-bold tabular-nums">{v}</div>
+                <div className="truncate text-xs text-muted">{l}{hint ? <span className="text-muted/80"> · {hint}</span> : null}</div>
+              </div>
+            </>
+          );
+          // Status cards open the respondents behind the number (feedback 2026-11-18).
+          return filter ? (
+            <button key={l} type="button" onClick={() => setDataFor({ status: filter, title: p.projectCode })} title={`Show the respondents: ${l}`} className="card flex min-w-0 items-center gap-3 p-4 text-left transition hover:-translate-y-0.5 hover:border-brand/50 hover:shadow-md focus-visible:ring-2 focus-visible:ring-brand">
+              {body}
+            </button>
+          ) : (
+            <div key={l} className="card flex min-w-0 items-center gap-3 p-4">{body}</div>
+          );
+        })}
       </div>
 
       {!!p.finance?.length && (
@@ -236,7 +251,8 @@ export default function ProjectPage() {
 
       {live && hasFeature(me, 'forecasting') && <ForecastPanel projectId={p.id} refreshKey={refreshedAt?.getTime()} />}
 
-      <div className="mb-5 flex gap-1 overflow-x-auto border-b border-line" role="tablist">
+      {/* Wraps onto a second row in a narrow window, so every tab stays in view (feedback 2026-11-18). */}
+      <div className="tabs-wrap mb-5 flex flex-wrap gap-x-1 border-b border-line" role="tablist">
         {TABS.filter((t) => t !== 'Team' || hasFeature(me, 'collaboration')).map((t) => (
           <div key={t} className={clsx('-mb-px flex shrink-0 items-center border-b-2', tab === t ? 'border-brand' : 'border-transparent')}>
             <button role="tab" aria-selected={tab === t} onClick={() => setTab(t)} className={clsx('whitespace-nowrap py-2.5 text-sm', tab === t ? 'pl-4 pr-1 font-medium text-brand' : 'px-4 text-muted hover:text-ink')}>

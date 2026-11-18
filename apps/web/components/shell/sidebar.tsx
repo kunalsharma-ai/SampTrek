@@ -1,13 +1,25 @@
 'use client';
 import clsx from 'clsx';
-import { ChevronsLeft, ChevronsRight, Clock, Star, X } from 'lucide-react';
+import { ChevronDown, ChevronsLeft, ChevronsRight, Clock, Star, X } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { canEdit, useMe } from '@/components/me';
 import { BrandIcon, ProductLogo } from '@/components/brand-mark';
 import { DEFAULT_BRAND } from '@/lib/branding';
 import { useTheme } from '@/components/theme';
-import { isActive, NAV_GROUP_LABEL, NAV_GROUPS, visibleNav, type NavItem } from './nav';
+import { isActive, NAV_GROUP_ICON, NAV_GROUP_LABEL, NAV_GROUPS, visibleNav, type NavGroup, type NavItem } from './nav';
+
+const OPEN_KEY = 'samptrek:nav-open';
+/** Groups opened by hand, remembered in this browser. */
+function readOpen(): string[] {
+  try {
+    const v = JSON.parse(localStorage.getItem(OPEN_KEY) ?? '[]');
+    return Array.isArray(v) ? v.filter((x) => typeof x === 'string') : [];
+  } catch {
+    return [];
+  }
+}
 
 /** Collapsible navigation with favorites and recent projects. Compact mode shows icons with labels on hover/focus. */
 export function Sidebar({ mobileOpen, onClose, badges = {} }: { mobileOpen: boolean; onClose: () => void; badges?: Record<string, number> }) {
@@ -20,6 +32,38 @@ export function Sidebar({ mobileOpen, onClose, badges = {} }: { mobileOpen: bool
   const favorites = prefs.favorites.map((h) => items.find((n) => n.href === h)).filter((n): n is NavItem => !!n);
   const toggleFav = (href: string) =>
     update({ favorites: prefs.favorites.includes(href) ? prefs.favorites.filter((f) => f !== href) : [...prefs.favorites, href].slice(0, 20) });
+
+  // Compact menu (feedback 2026-11-18): each main menu folds its pages away as a sub menu, so the
+  // whole menu fits without scrolling. The group of the open page is always open; others open on click.
+  const [open, setOpen] = useState<string[]>([]);
+  useEffect(() => setOpen(readOpen()), []);
+  const setOpenSaved = (next: string[]) => {
+    setOpen(next);
+    try { localStorage.setItem(OPEN_KEY, JSON.stringify(next)); } catch { /* private window */ }
+  };
+  const activeGroup = items.find((n) => isActive(pathname, n.href))?.group;
+  const isOpen = (g: string) => g === 'Main' || g === activeGroup || open.includes(g);
+  const toggleGroup = (g: string) => setOpenSaved(isOpen(g) && g !== activeGroup ? open.filter((x) => x !== g) : [...open.filter((x) => x !== g), g]);
+  // The product tour can point at a page inside a closed group.
+  useEffect(() => {
+    const reveal = (e: Event) => {
+      const g = items.find((n) => n.href === (e as CustomEvent<string>).detail)?.group;
+      if (g) setOpen((o) => (o.includes(g) ? o : [...o, g]));
+    };
+    window.addEventListener('samptrek:nav-reveal', reveal);
+    return () => window.removeEventListener('samptrek:nav-reveal', reveal);
+  }, [items]);
+  const [flyout, setFlyout] = useState<{ g: NavGroup; top: number; left: number } | null>(null);
+  const flyRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!flyout) return;
+    const close = (e: MouseEvent) => !flyRef.current?.contains(e.target as Node) && setFlyout(null);
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && setFlyout(null);
+    document.addEventListener('mousedown', close);
+    document.addEventListener('keydown', esc);
+    return () => { document.removeEventListener('mousedown', close); document.removeEventListener('keydown', esc); };
+  }, [flyout]);
+  useEffect(() => setFlyout(null), [pathname]);
 
   const Item = ({ n, fav }: { n: NavItem; fav?: boolean }) => {
     const active = isActive(pathname, n.href);
@@ -71,6 +115,44 @@ export function Sidebar({ mobileOpen, onClose, badges = {} }: { mobileOpen: bool
     <div className={clsx('px-3 pb-1 pt-4 text-[11px] font-semibold uppercase tracking-wider text-sidebar-muted', compact && 'lg:sr-only')}>{children}</div>
   );
 
+  /** A main menu: a button that opens its pages below it (or beside it, as a flyout, when the sidebar is narrow). */
+  const Group = ({ g, label, list }: { g: NavGroup; label: string; list: NavItem[] }) => {
+    const Icon = NAV_GROUP_ICON[g];
+    const expanded = isOpen(g);
+    const holdsActive = g === activeGroup;
+    const count = list.reduce((a, n) => a + (badges[n.href] ?? 0), 0);
+    return (
+      <div className="pt-1">
+        <button
+          type="button"
+          aria-expanded={compact ? flyout?.g === g : expanded}
+          title={compact ? label : undefined}
+          onClick={(e) => {
+            if (compact && window.matchMedia('(min-width: 1024px)').matches) {
+              const r = e.currentTarget.getBoundingClientRect();
+              setFlyout(flyout?.g === g ? null : { g, top: Math.min(r.top, window.innerHeight - 40 * list.length - 60), left: r.right + 8 });
+            } else toggleGroup(g);
+          }}
+          className={clsx(
+            'flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm font-semibold transition-colors duration-[var(--dur)]',
+            compact && 'lg:justify-center lg:px-0',
+            holdsActive ? 'text-sidebar-ink' : 'text-sidebar-muted hover:bg-sidebar-ink/5 hover:text-sidebar-ink',
+          )}
+        >
+          <Icon className={clsx('h-[18px] w-[18px] shrink-0', holdsActive && 'text-sidebar-active')} aria-hidden />
+          <span className={clsx('flex-1 truncate', compact && 'lg:sr-only')}>{label}</span>
+          {count > 0 && !expanded && <span className={clsx('grid h-5 min-w-5 place-items-center rounded-full bg-sidebar-active px-1.5 text-[11px] font-semibold text-sidebar', compact && 'lg:hidden')}>{count > 99 ? '99+' : count}</span>}
+          <ChevronDown className={clsx('h-4 w-4 shrink-0 transition-transform duration-[var(--dur)]', expanded ? 'rotate-0' : '-rotate-90', compact && 'lg:hidden')} aria-hidden />
+        </button>
+        {expanded && (
+          <div className={clsx('mt-0.5 space-y-0.5 border-l border-sidebar-ink/10 pl-2 ml-[21px]', compact && 'lg:hidden')}>
+            {list.map((n) => <Item key={n.href} n={n} />)}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <aside
       aria-label="Main navigation"
@@ -116,13 +198,20 @@ export function Sidebar({ mobileOpen, onClose, badges = {} }: { mobileOpen: bool
           const list = items.filter((n) => n.group === g);
           if (!list.length) return null;
           const label = NAV_GROUP_LABEL[g];
-          return (
-            <div key={g} className={clsx(!label && 'pt-3')}>
-              {label && <Heading>{label}</Heading>}
-              <div className="space-y-0.5">{list.map((n) => <Item key={n.href} n={n} />)}</div>
-            </div>
-          );
+          if (!label) return <div key={g} className="space-y-0.5 pt-3">{list.map((n) => <Item key={n.href} n={n} />)}</div>;
+          return <Group key={g} g={g} label={label} list={list} />;
         })}
+        {flyout && (
+          <div ref={flyRef} role="menu" aria-label={NAV_GROUP_LABEL[flyout.g] ?? ''} className="fixed z-50 hidden w-60 rounded-xl border border-sidebar-ink/10 bg-sidebar p-2 text-sidebar-ink shadow-xl lg:block" style={{ top: Math.max(8, flyout.top), left: flyout.left }}>
+            <div className="px-3 pb-1 pt-1 text-[11px] font-semibold uppercase tracking-wider text-sidebar-muted">{NAV_GROUP_LABEL[flyout.g]}</div>
+            {items.filter((n) => n.group === flyout.g).map((n) => (
+              <Link key={n.href} href={n.href} role="menuitem" className={clsx('flex items-center gap-3 rounded-lg px-3 py-2 text-sm', isActive(pathname, n.href) ? 'bg-sidebar-ink/10 font-medium' : 'text-sidebar-muted hover:bg-sidebar-ink/5 hover:text-sidebar-ink')}>
+                <n.icon className="h-4 w-4 shrink-0" aria-hidden /> <span className="truncate">{n.label}</span>
+                {!!badges[n.href] && <span className="ml-auto grid h-5 min-w-5 place-items-center rounded-full bg-sidebar-active px-1.5 text-[11px] font-semibold text-sidebar">{badges[n.href]}</span>}
+              </Link>
+            ))}
+          </div>
+        )}
         {prefs.recentProjects.length > 0 && (
           <>
             <Heading>Recent projects</Heading>

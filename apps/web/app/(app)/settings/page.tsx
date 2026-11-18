@@ -7,6 +7,7 @@ import { AiCopilotSettings } from '@/components/settings/ai-settings';
 import { AlertSettings } from '@/components/settings/alert-settings';
 import { FinanceSettings } from '@/components/settings/finance-settings';
 import { InvoiceProfileSettings } from '@/components/settings/invoice-profile';
+import { InvoiceDesignSettings } from '@/components/settings/invoice-design';
 import { SignInSecurity } from '@/components/settings/sign-in-security';
 import { SingleSignOn } from '@/components/settings/single-sign-on';
 import { NumberingSettings } from '@/components/settings/numbering';
@@ -66,6 +67,7 @@ export default function SettingsPage() {
       {isAdmin && <AlertSettings />}
       <div id="finance" className="scroll-mt-20"><FinanceSettings isAdmin={isAdmin} /></div>
       <InvoiceProfileSettings isAdmin={isAdmin} />
+      <div id="invoice-design" className="scroll-mt-20"><InvoiceDesignSettings isAdmin={isAdmin} /></div>
       <Section title="Redirect security policy">
         <p className="mb-4 text-sm text-muted">Respondents can only be redirected to these domains (plus each vendor&apos;s own domains for that vendor). Overrides cannot bypass this list.</p>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
