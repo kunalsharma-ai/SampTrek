@@ -1,6 +1,6 @@
 import { Global, Injectable, Logger, Module } from '@nestjs/common';
 import * as nodemailer from 'nodemailer';
-import { SmtpConfig, smtpTransportOptions } from '../common/config';
+import { SmtpConfig } from '../common/config';
 import { IntegrationsService } from '../integrations/integrations.service';
 
 export interface Mail {
@@ -45,7 +45,6 @@ export class MailService {
     let t = this.cached.get(key);
     if (!t) {
       if (this.cached.size > 50) this.cached.clear();
-      t = nodemailer.createTransport(smtpTransportOptions(s));
       // Zoho Mail: host smtppro.zoho.in, port 465, secure: true (SSL/TLS), auth = sending mailbox + app password.
       // Every value comes from Settings → Integrations (the database); nothing is hard-coded here.
       t = nodemailer.createTransport({

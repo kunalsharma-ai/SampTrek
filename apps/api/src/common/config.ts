@@ -78,11 +78,6 @@ export const config = {
 export type EnvMap = Record<string, string | undefined>;
 
 /**
- * Outgoing email (docs/INTEGRATIONS.md). Zoho Mail SMTP by default: smtppro.zoho.in on port 465
- * with SSL, signing in as the sending mailbox. Every part is editable in Settings → Integrations.
- * Null when not set up.
- */
-export const SMTP_DEFAULTS = { host: 'smtppro.zoho.in', port: 465, secure: true } as const;
  * Outgoing email (docs/INTEGRATIONS.md), read from Settings → Integrations (the database), never
  * hard-coded. Zoho Mail SMTP by default: smtppro.zoho.in, port 465, SSL/TLS (secure: true), with the
  * sending mailbox as the user. Other Zoho hosts (smtp.zoho.in for personal accounts, smtppro.zoho.com
@@ -252,24 +247,4 @@ export function aiProviderFrom(kind: AiKind, env: EnvMap): AiConfig | null {
   };
 }
 export type SmtpConfig = NonNullable<ReturnType<typeof smtpFrom>>;
-
-/**
- * The nodemailer transport for the stored mail settings, in Zoho's recommended shape:
- * host smtppro.zoho.in, port 465, secure: true (SSL/TLS), auth.user = the sending mailbox and
- * auth.pass = its app password. User and password always come from the database, never .env.
- */
-export function smtpTransportOptions(c: SmtpConfig, socketTimeout = 30_000) {
-  return {
-    host: c.host,
-    port: c.port,
-    secure: c.secure, // SSL/TLS
-    auth: {
-      user: c.user,
-      pass: c.pass,
-    },
-    connectionTimeout: 15_000,
-    greetingTimeout: 15_000,
-    socketTimeout,
-  };
-}
 export type ZohoBooksConfig = NonNullable<ReturnType<typeof zohoBooksFrom>>;
