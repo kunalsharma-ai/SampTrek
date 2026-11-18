@@ -8,7 +8,7 @@ import { useTheme } from '@/lib/theme';
 import { useLoad } from '@/lib/use-load';
 
 interface Summary { vendor: { name: string }; liveAllocations: number; clicks: number; conversion: number; stats: Record<string, number>; payout: Record<'approved' | 'pending' | 'rejected', { completes: number; payout: number }> }
-interface Allocation { id: string; project: { projectCode: string; name: string }; countryCode: string; loiMinutes: number; irPercent: number; status: string; accepting: boolean; cpi: string; currency: string; targetCompletes: number; completes: number; entryLink: string; testEntryLink: string; stats: Record<string, number> }
+interface Allocation { id: string; project: { projectCode: string; name: string }; countryCode: string; loiMinutes: number; irPercent: number; status: string; accepting: boolean; cpi: string | null; currency: string; targetCompletes: number; completes: number; entryLink: string; testEntryLink: string; stats: Record<string, number> }
 
 /** Vendor (panel) users: their live links, completes and payouts. Never client prices. */
 export default function VendorPortalScreen() {
@@ -51,7 +51,7 @@ function VendorPortal() {
             <Pill tone={x.accepting ? 'good' : 'neutral'}>{x.accepting ? 'Accepting' : 'Not accepting'}</Pill>
           </View>
           <Text style={{ color: c.text, fontWeight: '700' }}>{x.project.name}</Text>
-          <Muted>{`LOI ${x.loiMinutes} min · IR ${x.irPercent}% · ${money(x.cpi, x.currency)} per complete`}</Muted>
+          <Muted>{`LOI ${x.loiMinutes} min · IR ${x.irPercent}%${x.cpi != null ? ` · ${money(x.cpi, x.currency)} per complete` : ''}`}</Muted>
           <Progress value={x.targetCompletes ? x.completes / x.targetCompletes : 0} />
           <Muted>{`${x.completes} / ${x.targetCompletes} completes · ${x.stats.TERMINATE ?? 0} terminates`}</Muted>
           <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>

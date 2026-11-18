@@ -41,6 +41,13 @@ export function newKey(): string {
   return out;
 }
 
+/** "pretest" → "pretest-", "78-" stays; empty → "". */
+export function normalisePrefix(p: string | undefined | null): string {
+  const t = (p ?? '').trim();
+  if (!t) return '';
+  return /[-_]$/.test(t) ? t : `${t}-`;
+}
+
 export const linkUrl = (key: string) => `${config.publicBaseUrl}/u/${key}`;
 
 export const generateSchema = z
@@ -48,6 +55,8 @@ export const generateSchema = z
     allocationId: z.string().min(1),
     count: z.number().int().min(1).max(MAX_PER_BATCH),
     label: z.string().trim().max(120).optional(),
+    /** Custom prefix for every key, e.g. "pretest" or "78-"; a dash is added when it does not end in - or _. */
+    prefix: z.string().trim().regex(/^[A-Za-z0-9_-]{0,30}$/, 'Use up to 30 letters, numbers, - or _').optional(),
     expiresAt: z.string().datetime({ offset: true }).nullable().optional(),
   })
   .strict();
@@ -62,6 +71,7 @@ const onlySchema = z.object({ uniqueLinksOnly: z.boolean() }).strict();
 const listSchema = z.object({
   allocationId: z.string().optional(),
   batchId: z.string().optional(),
+  prefix: z.string().trim().max(31).optional(),
   status: z.enum(['UNUSED', 'USED', 'REVOKED', 'EXPIRED']).optional(),
   q: z.string().trim().max(64).optional(),
   skip: z.coerce.number().int().min(0).default(0),
@@ -83,7 +93,7 @@ function csvCell(v: unknown) {
 }
 export const toCsv = (rows: unknown[][]) => rows.map((r) => r.map(csvCell).join(',')).join('\r\n');
 
-export const CSV_HEADER = ['Key', 'Link', 'Vendor', 'Market', 'Batch', 'Link status', 'Used at', 'Respondent status', 'Respondent detail', 'Blocked re-use attempts', 'Expires at', 'Created at'];
+export const CSV_HEADER = ['Key', 'Link', 'Vendor', 'Market', 'Batch', 'Prefix', 'Link status', 'Used at', 'Respondent status', 'Respondent detail', 'Blocked re-use attempts', 'Expires at', 'Created at'];
 
 const LINK_SELECT = {
   id: true,
@@ -94,7 +104,7 @@ const LINK_SELECT = {
   blockedAttempts: true,
   lastBlockedAt: true,
   createdAt: true,
-  batch: { select: { id: true, label: true, expiresAt: true } },
+  batch: { select: { id: true, label: true, prefix: true, expiresAt: true } },
   vendorAllocation: { select: { id: true, vendor: { select: { name: true, code: true } }, projectCountry: { select: { countryCode: true, targetGroup: true } } } },
   session: { select: { id: true, status: true, statusDetail: true, startedAt: true, outcomeAt: true } },
 } satisfies Prisma.UniqueLinkSelect;
@@ -109,6 +119,7 @@ export function csvRows(links: LinkRow[]) {
     l.vendorAllocation.vendor.name,
     [l.vendorAllocation.projectCountry.countryCode, l.vendorAllocation.projectCountry.targetGroup].filter(Boolean).join(' · '),
     l.batch.label ?? '',
+    l.batch.prefix ?? '',
     shownStatus(l, now),
     l.usedAt,
     l.session?.status ?? '',
@@ -147,8 +158,9 @@ export class UniqueLinksService {
     const existing = await this.prisma.uniqueLink.count({ where: { projectId } });
     if (existing + body.count > MAX_PER_PROJECT) throw new BadRequestException(`A project can hold at most ${MAX_PER_PROJECT.toLocaleString('en')} unique links (this one has ${existing.toLocaleString('en')})`);
 
+    const prefix = normalisePrefix(body.prefix);
     const batch = await this.prisma.uniqueLinkBatch.create({
-      data: { organizationId: p.organizationId, projectId, vendorAllocationId: a.id, label: body.label || null, count: body.count, expiresAt, createdById: u.id },
+      data: { organizationId: p.organizationId, projectId, vendorAllocationId: a.id, label: body.label || null, prefix: prefix || null, count: body.count, expiresAt, createdById: u.id },
     });
     let made = 0;
     for (let tries = 0; made < body.count && tries < 20; tries++) {
@@ -156,7 +168,7 @@ export class UniqueLinksService {
       const r = await createManySkipDuplicates(
         this.prisma.uniqueLink,
         'UniqueLink',
-        Array.from({ length: n }, () => ({ organizationId: p.organizationId, projectId, vendorAllocationId: a.id, batchId: batch.id, key: newKey() })),
+        Array.from({ length: n }, () => ({ organizationId: p.organizationId, projectId, vendorAllocationId: a.id, batchId: batch.id, key: prefix + newKey() })),
       );
       made += r.count;
     }
@@ -166,7 +178,7 @@ export class UniqueLinksService {
       action: 'unique-links.generate',
       entityType: 'Project',
       entityId: projectId,
-      detail: { batchId: batch.id, count: made, vendor: a.vendor.name, country: a.projectCountry.countryCode, label: batch.label, expiresAt },
+      detail: { batchId: batch.id, count: made, vendor: a.vendor.name, country: a.projectCountry.countryCode, label: batch.label, prefix: batch.prefix, expiresAt },
     });
     return { batch: { ...batch, count: made }, created: made };
   }
@@ -218,6 +230,7 @@ export class UniqueLinksService {
         return {
           id: b.id,
           label: b.label,
+          prefix: b.prefix,
           allocationId: b.vendorAllocationId,
           vendor: a?.vendor.name ?? '',
           countryCode: a?.projectCountry.countryCode ?? '',
@@ -249,6 +262,8 @@ export class UniqueLinksService {
       projectId,
       ...(f.allocationId ? { vendorAllocationId: f.allocationId } : {}),
       ...(f.batchId ? { batchId: f.batchId } : {}),
+      // AND, so it can sit next to the status filter, which also looks at the batch.
+      ...(f.prefix ? { AND: [{ batch: { prefix: f.prefix } }] } : {}),
       ...(f.q ? { key: { startsWith: f.q.replace(/^.*\/u\//, '') } } : {}),
       ...status,
     };

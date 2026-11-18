@@ -12,6 +12,7 @@ import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { redirectConfigSchema } from '../redirects/redirect.types';
 import { LOGO_SELECT, withLogoUrl } from '../parties/logos';
+import { clientProjectsReport } from './client-report';
 
 /** Every contact needs a name and a way to reach them: a valid email, a valid phone, or both. */
 const contactSchema = z
@@ -77,6 +78,12 @@ export class ClientsController {
       select: { id: true, name: true, code: true, status: true, website: true, contacts: { orderBy: { name: 'asc' } }, _count: { select: { projects: true } }, ...LOGO_SELECT },
     });
     return rows.map((r) => withLogoUrl('client', r));
+  }
+
+  /** The client's projects with approved completes, revenue, cost, profit and rejection ratio. */
+  @Get(':id/projects-report')
+  projectsReport(@CurrentUser() u: AuthUser, @Param('id') id: string) {
+    return clientProjectsReport(this.prisma, u.organizationId, id);
   }
 
   @Get(':id')

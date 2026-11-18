@@ -74,6 +74,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const startTour = useCallback(() => { setPalette(false); setCopilot(false); setTour(true); }, []);
   // On phones the sidebar is a drawer: open it while a step points at a sidebar link.
   const tourStep = useCallback((target: string | undefined) => {
+    // The sidebar opens the menu group that holds the page the tour points at.
+    if (target?.startsWith('nav:')) window.dispatchEvent(new CustomEvent('samptrek:nav-reveal', { detail: target.slice(4) }));
     if (window.matchMedia('(min-width: 1024px)').matches) return;
     setMobileNav(!!target?.startsWith('nav:'));
   }, []);

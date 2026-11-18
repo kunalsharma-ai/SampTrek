@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Module, Param, ParseIntPipe, Patch, Post, Put, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Module, Param, ParseIntPipe, Patch, Post, Put, Query } from '@nestjs/common';
 import { securityOverridesSchema } from '../survey/vendor-security';
 import { vendorReportQuery } from './vendor-report';
 import { ProjectHistoryService } from './project-history';
@@ -25,6 +25,7 @@ import {
 import { ProjectsService } from './projects.service';
 
 const vendorSecurityBody = z.object({ overrides: securityOverridesSchema });
+const vendorStatusBody = z.object({ status: z.enum(['ACTIVE', 'PAUSED', 'CLOSED']) });
 
 @Controller('projects')
 export class ProjectsController {
@@ -117,6 +118,29 @@ export class ProjectsController {
     @Body(new ZodPipe(vendorSecurityBody)) body: z.infer<typeof vendorSecurityBody>,
   ) {
     return this.projects.setVendorSecurity(u, id, vendorId, body.overrides);
+  }
+
+  /**
+   * One switch for a vendor in this project, all its markets at once (feedback 2026-11-18): ACTIVE,
+   * PAUSED (on hold) or CLOSED (inactive). Respondents already in the survey can finish.
+   */
+  @Put(':id/vendors/:vendorId/status')
+  @Roles(...EDITORS)
+  setVendorStatus(@CurrentUser() u: AuthUser, @Param('id') id: string, @Param('vendorId') vendorId: string, @Body(new ZodPipe(vendorStatusBody)) body: z.infer<typeof vendorStatusBody>) {
+    return this.projects.setVendorStatus(u, id, vendorId, body.status);
+  }
+
+  /** Takes a vendor added by mistake off the project. Refused once it has live respondents (set it inactive instead). */
+  @Delete(':id/vendors/:vendorId')
+  @Roles(...EDITORS)
+  removeVendor(@CurrentUser() u: AuthUser, @Param('id') id: string, @Param('vendorId') vendorId: string) {
+    return this.projects.removeVendor(u, id, vendorId);
+  }
+
+  /** Every vendor's respondents, paged and filtered by status, for the fieldwork status cards and View data. */
+  @Get(':id/report')
+  projectReport(@CurrentUser() u: AuthUser, @Param('id') id: string, @Query(new ZodPipe(vendorReportQuery)) q: z.infer<typeof vendorReportQuery>) {
+    return this.projects.vendorReport(u, id, null, q);
   }
 
   /** One vendor's respondents in this project, paged, for the View report popup. */

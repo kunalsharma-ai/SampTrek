@@ -16,7 +16,17 @@ export const vendorReportQuery = z.object({
   /** Every row (up to MAX_ALL), for the download. */
   all: z.enum(['true', 'false']).optional(),
   includeTest: z.enum(['true', 'false']).optional(),
+  /** One fieldwork status card (feedback 2026-11-18): the respondents behind that number. */
+  status: z.enum(['COMPLETE', 'STARTED', 'TERMINATE', 'QUOTA_FULL', 'SPEEDER', 'QUALITY', 'DUPLICATE', 'SECURITY_REJECT', 'QUALITY_FAIL', 'PARTIAL', 'TECHNICAL_ERROR']).optional(),
 });
+
+/** The sessions behind a status card; QUALITY is quality fails, duplicates and security together. */
+export function statusWhere(status: z.infer<typeof vendorReportQuery>['status']): Prisma.RespondentSessionWhereInput {
+  if (!status) return {};
+  if (status === 'SPEEDER') return { status: 'QUALITY_FAIL', statusDetail: 'SPEEDER' };
+  if (status === 'QUALITY') return { status: { in: ['QUALITY_FAIL', 'DUPLICATE', 'SECURITY_REJECT'] } };
+  return { status };
+}
 const MAX_ALL = 20_000;
 
 type Answer = { value?: unknown; label?: unknown };
@@ -28,14 +38,19 @@ function answerText(a: unknown): string {
   return Array.isArray(v) ? v.join('; ') : v == null ? '' : String(v);
 }
 
-export async function vendorReport(prisma: PrismaService, organizationId: string, projectId: string, vendorId: string, q: z.infer<typeof vendorReportQuery>) {
+/**
+ * Respondents of one project, for one vendor (View report) or every vendor (the fieldwork status
+ * cards and "View data"), optionally only one status.
+ */
+export async function vendorReport(prisma: PrismaService, organizationId: string, projectId: string, vendorId: string | null, q: z.infer<typeof vendorReportQuery>) {
   const project = await prisma.project.findFirst({ where: { id: projectId, organizationId }, select: { id: true, gateQuestions: true } });
   if (!project) throw new NotFoundException('Project not found');
-  const vendor = await prisma.vendor.findFirst({ where: { id: vendorId, organizationId }, select: { id: true, name: true, code: true } });
-  if (!vendor) throw new NotFoundException('Vendor not found');
+  const vendor = vendorId ? await prisma.vendor.findFirst({ where: { id: vendorId, organizationId }, select: { id: true, name: true, code: true } }) : null;
+  if (vendorId && !vendor) throw new NotFoundException('Vendor not found');
   const where: Prisma.RespondentSessionWhereInput = {
     projectId,
-    vendorAllocation: { vendorId },
+    ...(vendorId ? { vendorAllocation: { vendorId } } : {}),
+    ...statusWhere(q.status),
     ...(q.includeTest === 'true' ? {} : { isTest: false }),
     ...(q.q
       ? {
@@ -61,6 +76,7 @@ export async function vendorReport(prisma: PrismaService, organizationId: string
         token: true, vendorRespondentId: true, status: true, statusDetail: true, isTest: true, ipHash: true, deviceType: true,
         answers: true, startedAt: true, outcomeAt: true, expiresAt: true, approval: true,
         projectCountry: { select: { countryCode: true, targetGroup: true } },
+        vendorAllocation: { select: { vendor: { select: { name: true, code: true } } } },
       },
     }),
   ]);
@@ -69,7 +85,7 @@ export async function vendorReport(prisma: PrismaService, organizationId: string
   const now = Date.now();
   return {
     total,
-    vendor,
+    vendor: vendor ?? { id: null, name: 'All vendors', code: '' },
     gateQuestions,
     rows: rows.map((r) => {
       const gate = ((r.answers as { gate?: Record<string, unknown> } | null)?.gate ?? {}) as Record<string, unknown>;
@@ -79,7 +95,7 @@ export async function vendorReport(prisma: PrismaService, organizationId: string
       return {
         uid: r.token,
         respondentId: r.vendorRespondentId,
-        vendor: `${vendor.name} (${vendor.code})`,
+        vendor: `${r.vendorAllocation.vendor.name} (${r.vendorAllocation.vendor.code})`,
         country: r.projectCountry.countryCode,
         targetGroup: r.projectCountry.targetGroup,
         ipId: r.ipHash ? r.ipHash.slice(0, 10) : null,

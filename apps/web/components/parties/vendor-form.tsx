@@ -8,7 +8,7 @@ export interface VendorDetail {
   contactName: string | null; contactEmail: string | null; contactPhone: string | null;
   redirectAllowedDomains: string[]; callbackUrlTemplate: string | null; redirectUrls: Record<string, string> | null; logoUrl?: string | null;
   securityOverrides?: Record<string, boolean> | null;
-  payoutSharePercent?: number | null; autoAssign?: boolean; uidParam?: string | null; uidMacro?: string | null;
+  payoutSharePercent?: number | null; autoAssign?: boolean; portalHidePayout?: boolean; uidParam?: string | null; uidMacro?: string | null;
 }
 
 const DOMAIN = /^(\*\.)?[a-z0-9.-]+\.[a-z]{2,}$|^localhost$/i;
@@ -64,6 +64,7 @@ export function VendorForm({ vendor, taken, onSubmit, onCancel }: { vendor?: Ven
         fields: [
           { name: 'payoutShare', type: 'number', label: 'Payout share (% of client CPI)', min: 0, max: 100, placeholder: 'e.g. 60', required: (v) => !!v.autoAssign, hint: 'Needed for Auto assign' },
           { name: 'autoAssign', type: 'switch', label: 'Auto assign to new projects', hint: 'Added to every market of each new project, paid its payout share' },
+          { name: 'portalHidePayout', type: 'switch', label: 'Hide CPI and payout in vendor login', hint: 'The vendor still sees its projects, links and completes, but no prices or payout amounts' },
           { name: 'uidParam', type: 'text', label: 'Link variable', placeholder: 'vid', pattern: [/^[A-Za-z0-9_.-]{1,64}$/, 'Use letters, numbers, dot, dash or underscore.'], hint: 'The name in the entry link (?vid=…). Empty = vid' },
           {
             name: 'uidMacro', type: 'text', label: "Vendor's respondent variable", placeholder: '{TID}', pattern: [/^(\{[A-Za-z0-9_]{1,40}\}|\[[A-Za-z0-9_]{1,40}\])$/, 'Write it as the vendor does, e.g. {TID} or [RID].'],
@@ -115,7 +116,7 @@ export function VendorForm({ vendor, taken, onSubmit, onCancel }: { vendor?: Ven
         name: vendor.name, code: vendor.code, status: vendor.status,
         contactName: vendor.contactName ?? '', contactEmail: vendor.contactEmail ?? '', contactPhone: vendor.contactPhone ?? '', website: vendor.website ?? '',
         callback: vendor.callbackUrlTemplate ?? '', domains: vendor.redirectAllowedDomains,
-        payoutShare: vendor.payoutSharePercent ?? '', autoAssign: !!vendor.autoAssign, uidParam: vendor.uidParam ?? '', uidMacro: vendor.uidMacro ?? '',
+        payoutShare: vendor.payoutSharePercent ?? '', autoAssign: !!vendor.autoAssign, portalHidePayout: !!vendor.portalHidePayout, uidParam: vendor.uidParam ?? '', uidMacro: vendor.uidMacro ?? '',
         ...Object.fromEntries(VENDOR_REDIRECTS.map((r) => [key(r.status), vendor.redirectUrls?.[r.status] ?? ''])),
       }
     : undefined;
@@ -129,6 +130,7 @@ export function VendorForm({ vendor, taken, onSubmit, onCancel }: { vendor?: Ven
       redirectAllowedDomains: v.domains,
       payoutSharePercent: v.payoutShare === '' || v.payoutShare == null ? null : Number(v.payoutShare),
       autoAssign: !!v.autoAssign,
+      portalHidePayout: !!v.portalHidePayout,
       uidParam: String(v.uidParam ?? '').trim() || null,
       uidMacro: String(v.uidMacro ?? '').trim() || null,
       redirectUrls: Object.fromEntries(VENDOR_REDIRECTS.map((r) => [r.status, String(v[key(r.status)] ?? '').trim() || null])),

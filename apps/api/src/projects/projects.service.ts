@@ -31,6 +31,7 @@ import {
   CreateProjectInput,
   listQuerySchema,
   SECURITY_KEYS,
+  SECURITY_DEFAULT_ON,
   updateAllocationSchema,
   updateCountrySchema,
   updateProjectSchema,
@@ -405,6 +406,7 @@ export class ProjectsService {
     };
     return {
       ...p,
+      security: normalizeSecurity(p.security as Record<string, boolean>),
       client: withLogoUrl('client', p.client),
       stats,
       /** Actual LOI, IR and speeders from live sessions; planned values stay on each market. */
@@ -798,7 +800,44 @@ export class ProjectsService {
     return a;
   }
 
-  vendorReport(u: AuthUser, projectId: string, vendorId: string, q: z.infer<typeof vendorReportQuery>) {
+  /** Active, on hold (PAUSED) or inactive (CLOSED) for a vendor in every market of this project. */
+  async setVendorStatus(u: AuthUser, projectId: string, vendorId: string, status: 'ACTIVE' | 'PAUSED' | 'CLOSED') {
+    await this.mustOwn(u, projectId);
+    const r = await this.prisma.vendorAllocation.updateMany({ where: { vendorId, projectCountry: { projectId } }, data: { status } });
+    if (!r.count) throw new NotFoundException('This vendor is not on the project');
+    await this.audit.record({ organizationId: u.organizationId, actorId: u.id, action: 'allocation.status', entityType: 'Project', entityId: projectId, detail: { vendorId, status, markets: r.count } });
+    return { vendorId, status, markets: r.count };
+  }
+
+  /**
+   * Removes a vendor added by mistake from every market of the project, with its links, unique links
+   * and test sessions. Once a real respondent came through, the vendor stays (its data is billed and
+   * reported): the caller is told to set it inactive instead.
+   */
+  async removeVendor(u: AuthUser, projectId: string, vendorId: string) {
+    await this.mustOwn(u, projectId);
+    const allocations = await this.prisma.vendorAllocation.findMany({ where: { vendorId, projectCountry: { projectId } }, select: { id: true, vendor: { select: { name: true } } } });
+    if (!allocations.length) throw new NotFoundException('This vendor is not on the project');
+    const ids = allocations.map((a) => a.id);
+    const live = await this.prisma.respondentSession.count({ where: { vendorAllocationId: { in: ids }, isTest: false } });
+    if (live) {
+      throw new BadRequestException({
+        message: `${allocations[0].vendor.name} already sent ${live} respondent${live === 1 ? '' : 's'}, so it cannot be removed. Set it inactive instead: its links stop working and its data stays in the reports.`,
+        code: 'VENDOR_HAS_RESPONDENTS',
+      });
+    }
+    await this.prisma.$transaction(async (tx) => {
+      const tests = await tx.respondentSession.findMany({ where: { vendorAllocationId: { in: ids } }, select: { id: true } });
+      if (tests.length) await tx.respondentSession.deleteMany({ where: { id: { in: tests.map((t) => t.id) } } });
+      await tx.uniqueLink.deleteMany({ where: { vendorAllocationId: { in: ids } } });
+      await tx.uniqueLinkBatch.deleteMany({ where: { vendorAllocationId: { in: ids } } });
+      await tx.vendorAllocation.deleteMany({ where: { id: { in: ids } } });
+    });
+    await this.audit.record({ organizationId: u.organizationId, actorId: u.id, action: 'allocation.remove', entityType: 'Project', entityId: projectId, detail: { vendorId, markets: ids.length } });
+    return { vendorId, removed: ids.length };
+  }
+
+  vendorReport(u: AuthUser, projectId: string, vendorId: string | null, q: z.infer<typeof vendorReportQuery>) {
     return vendorReport(this.prisma, u.organizationId, projectId, vendorId, q);
   }
 
@@ -947,8 +986,9 @@ export function projectFinance(
   }));
 }
 
-function normalizeSecurity(s: Record<string, boolean | undefined>) {
-  return Object.fromEntries(SECURITY_KEYS.map((k) => [k, !!s[k]]));
+export function normalizeSecurity(s: Record<string, boolean | undefined> | null | undefined) {
+  const v = s ?? {};
+  return Object.fromEntries(SECURITY_KEYS.map((k) => [k, SECURITY_DEFAULT_ON.includes(k) ? v[k] !== false : !!v[k]]));
 }
 
 export function emptyStats() {

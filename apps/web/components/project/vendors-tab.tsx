@@ -192,9 +192,33 @@ export function VendorsTab({ project, editable, reload }: { project: ProjectDeta
     [project.countries],
   );
 
+  /** Live links only (no test links), for sending to vendors (feedback 2026-11-18). */
+  const allLiveLinks = useMemo(
+    () => ['Market\tVendor\tLive link', ...project.countries.flatMap((c) => c.allocations.filter((a) => !a.uniqueLinksOnly).map((a) => [marketName(c), a.vendor.name, a.entryLink].join('\t')))].join('\n'),
+    [project.countries],
+  );
+
   /** One vendor's links in every market, ready to paste into an email or a sheet. */
   const vendorLinks = (rows: { c: Country; a: Allocation }[]) =>
     ['Market\tLive link\tTest link', ...rows.map(({ c, a }) => [marketName(c), a.uniqueLinksOnly ? 'Unique links only' : a.entryLink, a.testEntryLink].join('\t'))].join('\n');
+  const vendorLiveLinks = (rows: { c: Country; a: Allocation }[]) =>
+    ['Market\tLive link', ...rows.filter(({ a }) => !a.uniqueLinksOnly).map(({ c, a }) => [marketName(c), a.entryLink].join('\t'))].join('\n');
+
+  /** Active / on hold / inactive for a vendor in all its markets, or remove it when it was added by mistake. */
+  async function vendorStatus(vendor: { id: string; name: string }, value: string) {
+    setError(null);
+    try {
+      if (value === 'REMOVE') {
+        if (!window.confirm(`Remove ${vendor.name} from this project? Its links stop working at once. This works only while it has no real respondents.`)) return;
+        await api(`/projects/${project.id}/vendors/${vendor.id}`, { method: 'DELETE' });
+      } else {
+        await api(`/projects/${project.id}/vendors/${vendor.id}/status`, { method: 'PUT', json: { status: value } });
+      }
+    } catch (e) {
+      setError(e);
+    }
+    reload();
+  }
 
   const byVendor = useMemo(() => {
     const m = new Map<string, { vendor: Allocation['vendor']; rows: { c: Country; a: Allocation }[] }>();
@@ -236,7 +260,7 @@ export function VendorsTab({ project, editable, reload }: { project: ProjectDeta
           <span>
             {project.countries.length} {project.countries.length === 1 ? 'market' : 'markets'}, {byVendor.length} {byVendor.length === 1 ? 'vendor' : 'vendors'}. Each vendor gets its own entry link per market. Replace <code className="rounded bg-sunken px-1">[UID]</code> with the vendor&apos;s respondent ID macro, or set the vendor&apos;s variable (e.g. <code className="rounded bg-sunken px-1">{'{TID}'}</code>) on the Vendors page to have it filled in. Test links are never billed.
           </span>
-          {byVendor.length > 0 && <span className="inline-flex items-center gap-1"><CopyButton text={allLinks} label="Copy all links" /><InfoTip id="vendors.copyAll" /></span>}
+          {byVendor.length > 0 && <span className="inline-flex items-center gap-1"><CopyButton text={allLinks} label="Copy all links" /><CopyButton text={allLiveLinks} label="Copy only live links" /><InfoTip id="vendors.copyAll" /></span>}
         </p>
         {editable && byVendor.length > 0 && (
           <div className="mt-4">
@@ -289,7 +313,9 @@ export function VendorsTab({ project, editable, reload }: { project: ProjectDeta
               title={<span>{vendor.name} <span className="font-normal text-muted">· {vendor.code} · {rows.length} {rows.length === 1 ? 'market' : 'markets'}</span></span>}
               actions={
                 <div className="flex flex-wrap items-center gap-1.5">
+                  {editable && <VendorStatusPicker status={sharedStatus(rows)} name={vendor.name} onChange={(v) => vendorStatus(vendor, v)} />}
                   <CopyButton text={vendorLinks(rows)} label="Copy all links" />
+                  <CopyButton text={vendorLiveLinks(rows)} label="Copy only live links" />
                   <button className="btn-ghost px-2.5 py-1.5 text-xs" onClick={() => setReportFor(vendor)}><FileBarChart className="h-3.5 w-3.5" /> View report</button>
                   <button className={clsx('btn-ghost px-2.5 py-1.5 text-xs', Object.keys(rows[0].a.securityOverrides ?? {}).length > 0 && 'text-brand')} aria-expanded={securityFor === vendor.id} onClick={() => setSecurityFor(securityFor === vendor.id ? null : vendor.id)}><ShieldCheck className="h-3.5 w-3.5" /> Security</button>
                   {editable && rows.length > 1 && <PayoutEverywhere currency={rows[0].c.currency} onApply={(cpi) => payoutEverywhere(vendor.id, cpi)} />}
@@ -437,6 +463,33 @@ export function VendorsTab({ project, editable, reload }: { project: ProjectDeta
   );
 }
 
+/** The vendor's status when all its markets agree, else MIXED. */
+function sharedStatus(rows: { a: Allocation }[]): string {
+  const set = new Set(rows.map(({ a }) => a.status));
+  return set.size === 1 ? [...set][0] : 'MIXED';
+}
+
+const VENDOR_STATUS_TONE: Record<string, string> = { ACTIVE: 'border-ok/50 text-ok', PAUSED: 'border-warn/50 text-warn', CLOSED: 'border-bad/40 text-bad', MIXED: 'border-line' };
+
+/** One drop-down for a vendor on this project: Active, On hold, Inactive or Remove (feedback 2026-11-18). */
+function VendorStatusPicker({ status, name, onChange }: { status: string; name: string; onChange: (v: string) => void }) {
+  return (
+    <select
+      className={clsx('input w-auto py-1 pl-2 pr-7 text-xs font-semibold', VENDOR_STATUS_TONE[status])}
+      aria-label={`Status of ${name} on this project`}
+      title="Active: links work. On hold: links paused for now. Inactive: links closed. Remove: take a vendor added by mistake off the project."
+      value={status}
+      onChange={(e) => onChange(e.target.value)}
+    >
+      {status === 'MIXED' && <option value="MIXED" disabled>Mixed</option>}
+      <option value="ACTIVE">Active</option>
+      <option value="PAUSED">On hold</option>
+      <option value="CLOSED">Inactive</option>
+      <option value="REMOVE">Remove from project…</option>
+    </select>
+  );
+}
+
 function PayoutEverywhere({ currency, onApply }: { currency: string; onApply: (cpi: number) => void }) {
   const [v, setV] = useState('');
   return (
@@ -459,7 +512,7 @@ function VendorProjectSecurity({ project, vendor, current, editable, onSaved }: 
   return (
     <div className="mb-8 rounded-lg border border-line bg-sunken/40 p-4">
       <p className="mb-3 text-sm text-muted">
-        Security for {vendor.name} in this project, in all its markets. Leave a switch on &quot;Same as&quot; to follow {Object.keys(vendorWide).length ? `the vendor's own settings (${describeOverrides(vendorWide)}), then the project` : 'the project'}.
+        Security for {vendor.name} in this project, in all its markets. Click a switch to turn it ON or OFF for this vendor; dimmed switches follow {Object.keys(vendorWide).length ? `the vendor's own settings (${describeOverrides(vendorWide)}), then the project` : 'the project'}.
       </p>
       <SecurityOverridesEditor value={value} onChange={setValue} disabled={!editable} projectValues={{ ...(project.security as Record<string, boolean>), ...vendorWide }} />
       <ErrorBox error={error} />

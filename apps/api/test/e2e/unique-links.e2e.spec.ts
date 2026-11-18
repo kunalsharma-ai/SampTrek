@@ -189,7 +189,7 @@ describe('One-time unique links (e2e)', () => {
     const res = await pm.get(`/projects/${projectId}/unique-links/export.csv?status=USED`).expect(200);
     expect(res.headers['content-type']).toMatch(/text\/csv/);
     const lines = res.text.replace(/^﻿/, '').trim().split('\r\n');
-    expect(lines[0]).toContain('"Key","Link","Vendor","Market","Batch","Link status"');
+    expect(lines[0]).toContain('"Key","Link","Vendor","Market","Batch","Prefix","Link status"');
     const used = await prisma.uniqueLink.count({ where: { projectId, status: 'USED' } });
     expect(lines).toHaveLength(used + 1);
     expect(lines.slice(1).every((l) => l.includes('"USED"'))).toBe(true);

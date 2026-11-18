@@ -22,10 +22,16 @@ export const SECURITY_KEYS = [
   'proxyDetection',
   'automationDetection',
   'crossProjectDuplicates',
+  // One open (unfinished) live session per IP per project: blocks extra tabs. On unless switched off
+  // (feedback 2026-11-18: with every check off, a tester could not get back in after one run).
+  'oneOpenPerIp',
 ] as const;
 
+/** Switches that are on when a project never set them (older projects have no value stored). */
+export const SECURITY_DEFAULT_ON: readonly string[] = ['oneOpenPerIp'];
+
 export const securitySchema = z
-  .object(Object.fromEntries(SECURITY_KEYS.map((k) => [k, z.boolean().default(false)])) as Record<(typeof SECURITY_KEYS)[number], z.ZodDefault<z.ZodBoolean>>)
+  .object(Object.fromEntries(SECURITY_KEYS.map((k) => [k, z.boolean().default(SECURITY_DEFAULT_ON.includes(k))])) as Record<(typeof SECURITY_KEYS)[number], z.ZodDefault<z.ZodBoolean>>)
   .strict();
 
 /**

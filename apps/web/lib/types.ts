@@ -80,6 +80,7 @@ export const SECURITY_LABELS: Record<string, string> = {
   proxyDetection: 'IP and proxy reputation',
   automationDetection: 'Automated browsers',
   crossProjectDuplicates: 'Across projects',
+  oneOpenPerIp: 'One open survey per IP',
 };
 
 export const CATEGORIES = ['B2B', 'B2C', 'B2C-B2B', 'Consumer', 'Healthcare-Professional', 'Healthcare-Consumer', 'Teens-And-Parents'];

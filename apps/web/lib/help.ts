@@ -764,6 +764,7 @@ export const HELP: Record<string, HelpEntry> = {
   'check:browserFingerprinting': { what: 'Spots the same device coming back, from screen, hardware and browser traits.', how: 'Turn on to catch repeat respondents who change IP.', where: 'Whole project.' },
   'check:captcha': { what: 'A free human check plus a background proof-of-work that slows down scripts.', how: 'Turn on and pick the style in Gate & security.', where: 'Shown on the gate page.' },
   'check:duplicateDetection': { what: 'Stops the same IP address and browser entering the project twice.', how: 'Keep on for most studies.', where: 'Whole project, across all vendors.' },
+  'check:oneOpenPerIp': { what: 'While one survey from an IP is still open, a second entry from the same IP ends as Duplicate.', how: 'Turn off when several people share one IP (an office) or when you retest from one computer on a live link.', where: 'Live links of the whole project; vendors can override it.' },
   'check:browserLanguage': { what: 'One of the browser languages must match the survey language.', how: 'Turn on when language matters.', where: 'Each market checks its own language.' },
   'check:timezoneTracking': { what: 'The device time zone must belong to the survey country.', how: 'Turn on with Geolocation for stronger location checks.', where: 'Each market checks its own country.' },
   'check:torDetection': { what: 'Blocks connections through the TOR network.', how: 'Turn on to stop anonymous traffic.', where: 'Whole project.' },
@@ -849,10 +850,22 @@ export const HELP: Record<string, HelpEntry> = {
     how: 'Pick a set on the left. Add questions with Add question (your own), Library (single demographic questions) or Audience sets (copy from another set), click a question to edit it, tick the project categories it is for, then Save. New set makes your own.',
     where: 'New projects in a ticked category start with this set as their gate survey. Projects already created keep their questions.',
   },
+  'client.projectsReport': {
+    title: 'Projects of this client',
+    what: 'Every project for this client: month, work order, CPI, completes, approved completes after reconcile, revenue on approved, cost, profit and rejection ratio.',
+    how: 'Choose 10, 25 or 100 rows per page. Download Excel with charts for a workbook with a summary, pie charts and every project. The Projects count in the list opens the same report.',
+    where: 'Revenue and cost count approved completes only. Totals are per currency.',
+  },
+  'settings.invoiceDesign': {
+    title: 'Invoice design',
+    what: 'How your invoice PDFs look: the template, colour, field names, which fields show, extra fields, and the signature and stamp.',
+    how: 'Pick a template, rename or hide fields, add extra fields (PO number, vendor code), upload a signature and stamp (PNG or JPEG, up to 300 KB), then Preview and Save.',
+    where: 'Every invoice PDF. A draft invoice can use another template and add its own extra fields.',
+  },
   'vendor.security': {
     title: 'Security per vendor',
     what: 'Security switches that differ for one vendor: for example duplicate detection, captcha, the gate survey or device limits off (or on) for that vendor only.',
-    how: 'Leave a switch on "Same as" to follow the project. Pick On or Off to override it. On the vendor page it applies in every project; on Vendors & links → Security it applies in that project only, and wins.',
+    how: 'Each switch shows ON or OFF. A dimmed switch follows the project; click it to set it for this vendor, and Reset to follow again. On the vendor page it applies in every project; on Vendors & links → Security only there, and wins.',
     where: "This vendor's respondents only. Order: the project's setting for the vendor, then the vendor page, then the project.",
   },
   'device.mobileOs': {

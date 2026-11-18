@@ -7,6 +7,7 @@ import { BulkImport, type ImportColumn } from '@/components/parties/bulk-import'
 import { ClientForm, type ClientDetail } from '@/components/parties/client-form';
 import { LogoPicker, LogoUpload, PartyLogo, uploadLogo } from '@/components/parties/logo';
 import { StatusSwitch } from '@/components/parties/status-switch';
+import { ClientProjectsPopup, ClientProjectsReport } from '@/components/parties/client-report';
 import { Empty, ErrorBox, Loading, PageHeader, Section } from '@/components/ui';
 import { get, patch, post } from '@/lib/api';
 
@@ -32,6 +33,7 @@ export default function ClientsPage() {
   const [status, setStatus] = useState('');
   const [error, setError] = useState<unknown>(null);
   const [newLogo, setNewLogo] = useState<File | null>(null);
+  const [projectsOf, setProjectsOf] = useState<{ id: string; name: string } | null>(null);
   const load = () => get<ClientRow[]>('/clients').then(setRows).catch(setError);
   useEffect(() => {
     load();
@@ -107,6 +109,12 @@ export default function ClientsPage() {
           <ClientForm client={editing} taken={taken} onSubmit={save} onCancel={() => setEditing(null)} />
         </Section>
       )}
+      {editing && (
+        <Section title={`Projects · ${editing.name}`} help="client.projectsReport" className="mb-6">
+          <ClientProjectsReport key={editing.id} clientId={editing.id} />
+        </Section>
+      )}
+      {projectsOf && <ClientProjectsPopup client={projectsOf} onClose={() => setProjectsOf(null)} />}
       {!rows ? <Loading /> : rows.length === 0 ? <Empty>No clients yet. Add one, or bulk add them from a spreadsheet.</Empty> : (
         <>
           <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -130,7 +138,7 @@ export default function ClientsPage() {
                     <td className="td"><StatusSwitch kind="client" id={c.id} name={c.name} status={c.status} editable={canAdd} onError={setError} onChange={(st) => setRows((rs) => rs?.map((r) => (r.id === c.id ? { ...r, status: st } : r)) ?? rs)} /></td>
                     <td className="td text-xs">{c.website ? <a className="inline-flex items-center gap-1 text-brand hover:underline" href={c.website} target="_blank" rel="noreferrer noopener"><Globe className="h-3.5 w-3.5" />{c.website.replace(/^https?:\/\//, '')}</a> : <span className="text-muted">–</span>}</td>
                     <td className="td text-sm">{c.contacts.length ? c.contacts.map((x) => <div key={x.id}>{x.name}{x.email && <span className="text-muted"> · {x.email}</span>}</div>) : <span className="text-warn">No contact yet</span>}</td>
-                    <td className="td text-right tabular-nums">{c._count.projects}</td>
+                    <td className="td text-right tabular-nums">{c._count.projects > 0 ? <button className="font-semibold text-brand underline-offset-2 hover:underline" onClick={() => setProjectsOf({ id: c.id, name: c.name })} title={`See ${c.name}'s projects with completes, revenue and profit`}>{c._count.projects}</button> : 0}</td>
                     {canEdit(me) && <td className="td text-right"><button className="btn-ghost px-2.5 py-1 text-xs" onClick={() => openEdit(c.id)}><Pencil className="h-3.5 w-3.5" /> Edit</button></td>}
                   </tr>
                 ))}

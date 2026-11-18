@@ -15,6 +15,7 @@ import { ApprovalStatus, InvoiceStatus, Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { configOf } from '../accounting/formats';
 import { EMPTY_PROFILE, InvoiceProfile, renderInvoicePdf } from '../pdf/invoice-pdf';
+import { customFieldSchema, INVOICE_TEMPLATES, invoiceDesignSchema, STANDARD_FIELDS, TEMPLATE_IDS, type CustomField, type InvoiceDesign } from '../pdf/invoice-templates';
 import { AuditService } from '../audit/audit.service';
 import { AuthUser } from '../auth/auth.types';
 import { WebhooksService } from '../webhooks/webhooks.service';
@@ -30,6 +31,7 @@ export const reconcileSchema = z.object({
 export type ReconcileInput = z.infer<typeof reconcileSchema>;
 
 const profileText = (max: number) => z.string().max(max).nullable().optional();
+export { invoiceDesignSchema };
 export const invoiceProfileSchema = z
   .object({ legalName: profileText(200), address: profileText(1000), taxId: profileText(80), email: profileText(200), phone: profileText(60), bankDetails: profileText(1000), footer: profileText(300) })
   .strict();
@@ -44,9 +46,13 @@ export const updateInvoiceSchema = z
     notes: z.string().max(1000).nullable().optional(),
     /** Bank or payment reference, recorded when the invoice is marked paid. */
     paymentReference: z.string().trim().max(120).nullable().optional(),
+    /** Another template for this invoice only (null = the organisation's). */
+    template: z.enum(TEMPLATE_IDS).nullable().optional(),
+    /** This invoice's own extra fields, e.g. a PO number. */
+    customFields: z.array(customFieldSchema).max(12).optional(),
   })
   .merge(taxSchema)
-  .refine((b) => b.status || b.notes !== undefined || b.taxName !== undefined || b.taxPercent !== undefined, { message: 'Nothing to change' })
+  .refine((b) => b.status || b.notes !== undefined || b.taxName !== undefined || b.taxPercent !== undefined || b.template !== undefined || b.customFields !== undefined, { message: 'Nothing to change' })
   .refine((b) => b.paymentReference === undefined || b.status === 'PAID', { message: 'A payment reference is recorded when the invoice is marked paid', path: ['paymentReference'] });
 export const invoiceListSchema = z.object({
   status: z.nativeEnum(InvoiceStatus).optional(),
@@ -348,6 +354,37 @@ export class FinanceService {
     return clean;
   }
 
+  /** Template, colour, labels, custom fields, signature and stamp for invoice PDFs. */
+  async invoiceDesign(org: string) {
+    const o = await this.prisma.organization.findUniqueOrThrow({ where: { id: org }, select: { invoiceDesign: true } });
+    return { design: (o.invoiceDesign ?? {}) as InvoiceDesign, templates: INVOICE_TEMPLATES, fields: STANDARD_FIELDS };
+  }
+
+  async saveInvoiceDesign(u: AuthUser, d: InvoiceDesign) {
+    await this.prisma.organization.update({ where: { id: u.organizationId }, data: { invoiceDesign: d as unknown as Prisma.InputJsonValue } });
+    await this.audit.record({ organizationId: u.organizationId, actorId: u.id, action: 'invoice_design.update', entityType: 'Organization', entityId: u.organizationId, detail: { template: d.template ?? null, customFields: d.customFields?.length ?? 0, signature: !!d.signatureImage, stamp: !!d.stampImage } });
+    return this.invoiceDesign(u.organizationId);
+  }
+
+  /** A sample invoice in a design that is not saved yet, so the settings page can show it. */
+  async previewInvoiceDesign(u: AuthUser, d: InvoiceDesign) {
+    const o = await this.prisma.organization.findUniqueOrThrow({ where: { id: u.organizationId }, select: { name: true, invoiceProfile: true } });
+    return renderInvoicePdf({
+      org: o.name,
+      profile: { ...EMPTY_PROFILE, ...((o.invoiceProfile ?? {}) as Partial<InvoiceProfile>) },
+      design: d,
+      number: 'INV-SAMPLE-0001', status: 'SENT', currency: 'USD',
+      issuedAt: '18 Nov 2026', dueAt: '18 Dec 2026', paidAt: null, paymentReference: null,
+      client: { name: 'Sample Client Ltd', code: 'SAMPLE', billingAddress: '1 Market Street\nLondon EC1A 1AA', taxId: 'GB123456789' },
+      project: { code: 'PRX10001', name: 'Consumer habits study', workOrderNo: 'WO-2041' },
+      lines: [
+        { description: 'PRX10001 Consumer habits study: completes, US', countryCode: 'US', quantity: 250, unitPrice: 4.5, amount: 1125 },
+        { description: 'PRX10001 Consumer habits study: completes, GB', countryCode: 'GB', quantity: 120, unitPrice: 5.25, amount: 630 },
+      ],
+      subtotal: 1755, taxName: 'VAT', taxPercent: 20, taxAmount: 351, total: 2106, notes: 'PO number on request. Thank you for your business.',
+    });
+  }
+
   /** The invoice as a PDF, with the seller details from Settings and the client's billing address. */
   async invoicePdf(u: AuthUser, id: string) {
     const r = await this.prisma.invoice.findFirst({
@@ -355,7 +392,7 @@ export class FinanceService {
       include: {
         project: { select: { projectCode: true, name: true, workOrderNo: true } },
         client: { select: { name: true, code: true, billingAddress: true, taxId: true } },
-        organization: { select: { name: true, invoiceProfile: true, accountingConfig: true } },
+        organization: { select: { name: true, invoiceProfile: true, invoiceDesign: true, accountingConfig: true } },
       },
     });
     if (!r) throw new NotFoundException('Invoice not found');
@@ -365,6 +402,9 @@ export class FinanceService {
     const buf = await renderInvoicePdf({
       org: r.organization.name,
       profile: { ...EMPTY_PROFILE, ...((r.organization.invoiceProfile ?? {}) as Partial<InvoiceProfile>) },
+      design: (r.organization.invoiceDesign ?? null) as InvoiceDesign | null,
+      invoiceTemplate: r.template,
+      customFields: (r.customFields ?? null) as CustomField[] | null,
       number: r.number, status: r.status, currency: r.currency,
       issuedAt: day(r.issuedAt), dueAt: day(r.dueAt), paidAt: day(r.paidAt), paymentReference: r.paymentReference,
       client: r.client, project: { code: r.project.projectCode, name: r.project.name, workOrderNo: r.project.workOrderNo },
@@ -390,6 +430,7 @@ export class FinanceService {
     const inv = await this.prisma.invoice.findFirst({ where: { id, organizationId: u.organizationId } });
     if (!inv) throw new NotFoundException('Invoice not found');
     if (body.notes !== undefined && inv.status !== 'DRAFT') throw new BadRequestException('Notes can only be changed on a draft');
+    if ((body.template !== undefined || body.customFields !== undefined) && inv.status !== 'DRAFT') throw new BadRequestException('The template and extra fields can only be changed on a draft');
     const taxChange = body.taxName !== undefined || body.taxPercent !== undefined;
     if (taxChange && inv.status !== 'DRAFT') throw new BadRequestException('Tax can only be changed on a draft');
     const tax = taxChange
@@ -405,6 +446,8 @@ export class FinanceService {
         where: { id, status: inv.status },
         data: {
           ...(body.notes !== undefined ? { notes: body.notes } : {}),
+          ...(body.template !== undefined ? { template: body.template } : {}),
+          ...(body.customFields !== undefined ? { customFields: body.customFields.length ? (body.customFields as unknown as Prisma.InputJsonValue) : null } : {}),
           ...(tax ?? {}),
           ...(body.status ? { status: body.status } : {}),
           ...(body.status === 'SENT' ? { issuedAt: now, dueAt: new Date(now.getTime() + (body.dueDays ?? 30) * 86_400_000) } : {}),
@@ -461,7 +504,7 @@ export class FinanceService {
   }
 }
 
-function shape(r: { id: string; number: string; status: InvoiceStatus; currency: string; lines: Prisma.JsonValue; completes: number; subtotal: number; taxName: string | null; taxPercent: number; taxAmount: number; total: number; notes: string | null; issuedAt: Date | null; dueAt: Date | null; paidAt: Date | null; paymentReference?: string | null; voidedAt: Date | null; createdAt: Date; projectId: string; clientId: string }) {
+function shape(r: { id: string; number: string; status: InvoiceStatus; currency: string; lines: Prisma.JsonValue; completes: number; subtotal: number; taxName: string | null; taxPercent: number; taxAmount: number; total: number; notes: string | null; template?: string | null; customFields?: Prisma.JsonValue; issuedAt: Date | null; dueAt: Date | null; paidAt: Date | null; paymentReference?: string | null; voidedAt: Date | null; createdAt: Date; projectId: string; clientId: string }) {
   return {
     id: r.id,
     number: r.number,
@@ -475,6 +518,8 @@ function shape(r: { id: string; number: string; status: InvoiceStatus; currency:
     taxAmount: Number(r.taxAmount),
     total: Number(r.total),
     notes: r.notes,
+    template: r.template ?? null,
+    customFields: (r.customFields ?? []) as CustomField[],
     issuedAt: r.issuedAt,
     dueAt: r.dueAt,
     paidAt: r.paidAt,

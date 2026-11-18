@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { CurrentUser, EDITORS, Roles } from '../auth/decorators';
 import { AuthUser } from '../auth/auth.types';
 import { ZodPipe } from '../common/zod.pipe';
-import { createInvoiceSchema, FinanceService, invoiceListSchema, invoiceProfileSchema, reconcileSchema, updateInvoiceSchema } from './finance.service';
+import { createInvoiceSchema, FinanceService, invoiceDesignSchema, invoiceListSchema, invoiceProfileSchema, reconcileSchema, updateInvoiceSchema } from './finance.service';
 import { billListSchema, createBillsSchema, financeSettingsSchema, PayablesService, updateBillSchema } from './payables.service';
 
 @Controller()
@@ -57,6 +57,25 @@ export class FinanceController {
   @Roles('ADMIN')
   saveProfile(@CurrentUser() u: AuthUser, @Body(new ZodPipe(invoiceProfileSchema)) body: z.infer<typeof invoiceProfileSchema>) {
     return this.finance.saveInvoiceProfile(u, body);
+  }
+
+  @Get('organization/invoice-design')
+  design(@CurrentUser() u: AuthUser) {
+    return this.finance.invoiceDesign(u.organizationId);
+  }
+
+  @Put('organization/invoice-design')
+  @Roles('ADMIN')
+  saveDesign(@CurrentUser() u: AuthUser, @Body(new ZodPipe(invoiceDesignSchema)) body: z.infer<typeof invoiceDesignSchema>) {
+    return this.finance.saveInvoiceDesign(u, body);
+  }
+
+  /** A sample invoice in the design being edited (not saved). */
+  @Post('organization/invoice-design/preview')
+  async previewDesign(@CurrentUser() u: AuthUser, @Body(new ZodPipe(invoiceDesignSchema)) body: z.infer<typeof invoiceDesignSchema>, @Res() res: Response) {
+    const buf = await this.finance.previewInvoiceDesign(u, body);
+    res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': 'inline; filename="invoice-sample.pdf"', 'Cache-Control': 'no-store' });
+    res.send(buf);
   }
 
   @Get('invoices/:id')

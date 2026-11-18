@@ -70,6 +70,8 @@ const fields = {
   payoutSharePercent: z.number().min(0).max(100).nullable().optional(),
   /** Added to every market of each new project (needs a payout share). */
   autoAssign: z.boolean().optional(),
+  /** Hide CPI and payout amounts in the vendor portal. */
+  portalHidePayout: z.boolean().optional(),
   /** Link variable name and the placeholder the vendor's system fills, e.g. vid and {TID}. */
   uidParam: optional(uidParam),
   uidMacro: optional(z.string().trim().regex(/^(\{[A-Za-z0-9_]{1,40}\}|\[[A-Za-z0-9_]{1,40}\])$/, 'Write the placeholder as the vendor does, e.g. {TID} or [RID]')),
@@ -104,7 +106,7 @@ const importSchema = z.object({ rows: z.array(z.record(z.string(), z.unknown()))
 
 const PUBLIC_FIELDS = {
   id: true, name: true, code: true, status: true, website: true, contactName: true, contactEmail: true, contactPhone: true,
-  redirectAllowedDomains: true, callbackUrlTemplate: true, redirectUrls: true, securityOverrides: true, payoutSharePercent: true, autoAssign: true, uidParam: true, uidMacro: true, createdAt: true, ...LOGO_SELECT,
+  redirectAllowedDomains: true, callbackUrlTemplate: true, redirectUrls: true, securityOverrides: true, payoutSharePercent: true, autoAssign: true, portalHidePayout: true, uidParam: true, uidMacro: true, createdAt: true, ...LOGO_SELECT,
 } as const;
 
 function cleanUrls(raw: Record<string, string | null | undefined> | undefined): VendorRedirectUrls {
