@@ -178,7 +178,7 @@ export function CopilotChat({ conversationId, onConversation, compact, draft }: 
         <div className="max-w-sm">
           <Sparkles className="mx-auto mb-3 h-8 w-8 text-muted" />
           <p className="font-medium">{status.reason === 'not_configured' ? 'The AI copilot is not set up yet' : status.reason === 'turned_off' ? 'The AI copilot is turned off' : 'The AI copilot is not available for your role'}</p>
-          <p className="mt-1 text-sm text-muted">{status.reason === 'not_configured' ? 'An admin adds a Google Gemini API key under Settings → Integrations.' : 'An admin can change this under Settings → AI copilot.'}</p>
+          <p className="mt-1 text-sm text-muted">{status.reason === 'not_configured' ? 'An admin adds an AI provider key (Gemini, Claude, OpenAI, Groq, OpenRouter and others, free ones too) under Settings → Integrations.' : 'An admin can change this under Settings → AI copilot.'}</p>
         </div>
       </div>
     );
@@ -261,7 +261,7 @@ export function CopilotChat({ conversationId, onConversation, compact, draft }: 
             />
             {status?.features.voice && (
               <button className={clsx('h-10 w-10 shrink-0 justify-center p-0', live ? 'btn-danger' : 'btn-ghost')} aria-label={live ? 'End voice' : 'Talk to the copilot'} title={live ? 'End voice' : 'Talk to the copilot'}
-                onClick={async () => { if (live) voice.stop(); else { const id = await voice.start(conversationId, pathname); if (id && id !== conversationId) onConversation(id); } }}>
+                onClick={async () => { if (live) voice.stop(); else { const id = await voice.start(conversationId, pathname, status?.liveModel ? 'live' : 'browser'); if (id && id !== conversationId) onConversation(id); } }}>
                 {live ? <PhoneOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
               </button>
             )}

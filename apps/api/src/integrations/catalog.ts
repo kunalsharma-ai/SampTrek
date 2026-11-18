@@ -4,7 +4,7 @@
  * builders (common/config.ts) stay the same and old .env values can be copied in once on start.
  */
 
-export const INTEGRATION_KINDS = ['sampleon', 'smtp', 'sso_google', 'sso_microsoft', 'sso_zoho', 'gemini', 'zoho_books', 'xero', 'quickbooks', 'tally', 'bidzo', 'razorpay', 'stripe', 'push', 'backup_storage', 'ip_reputation'] as const;
+export const INTEGRATION_KINDS = ['sampleon', 'smtp', 'sso_google', 'sso_microsoft', 'sso_zoho', 'gemini', 'anthropic', 'openai', 'groq', 'openrouter', 'mistral', 'deepseek', 'openai_compatible', 'zoho_books', 'xero', 'quickbooks', 'tally', 'bidzo', 'razorpay', 'stripe', 'push', 'backup_storage', 'ip_reputation'] as const;
 /** Payment gateways the server owner uses to collect subscription payments (docs/SUBSCRIPTION_PAYMENTS.md). Never shown to other organisations. */
 export const PAYMENT_KINDS = ['razorpay', 'stripe'] as const;
 export const isPaymentKind = (k: string) => (PAYMENT_KINDS as readonly string[]).includes(k);
@@ -13,8 +13,11 @@ export const SERVER_ONLY_KINDS = [...PAYMENT_KINDS, 'backup_storage'] as const;
 export const isServerOnlyKind = (k: string) => (SERVER_ONLY_KINDS as readonly string[]).includes(k);
 export type IntegrationKind = (typeof INTEGRATION_KINDS)[number];
 /** Organisation settings the server owner may share as the default for organisations without their own (as .env once did). */
-export const SHAREABLE_KINDS = ['smtp', 'gemini', 'ip_reputation', 'bidzo'] as const;
+export const SHAREABLE_KINDS = ['smtp', 'gemini', 'anthropic', 'openai', 'groq', 'openrouter', 'mistral', 'deepseek', 'openai_compatible', 'ip_reputation', 'bidzo'] as const;
 export const isShareableKind = (k: string) => (SHAREABLE_KINDS as readonly string[]).includes(k);
+/** AI providers besides Gemini: one plan feature (integration.gemini, "AI providers") covers them all. */
+export const EXTRA_AI_KINDS = ['anthropic', 'openai', 'groq', 'openrouter', 'mistral', 'deepseek', 'openai_compatible'] as const;
+export const isExtraAiKind = (k: string) => (EXTRA_AI_KINDS as readonly string[]).includes(k);
 export const isKind = (k: string): k is IntegrationKind => (INTEGRATION_KINDS as readonly string[]).includes(k);
 
 export type FieldType = 'text' | 'secret' | 'select' | 'url' | 'email';
@@ -63,6 +66,78 @@ const ZOHO_ACCOUNTS = [
   { value: 'https://accounts.zoho.jp', label: 'accounts.zoho.jp (Japan)' },
   { value: 'https://accounts.zohocloud.ca', label: 'accounts.zohocloud.ca (Canada)' },
   { value: 'https://accounts.zoho.sa', label: 'accounts.zoho.sa (Saudi Arabia)' },
+];
+
+
+const AI_ORDER_STEP = 'Set up as many as you like. Under Settings → AI copilot choose the order: when one is busy, out of its free allowance or refuses the key, the copilot moves on to the next.';
+const aiModels = (prefix: string, model: string, fallback: string | null, hint: string): FieldDef[] => [
+  { key: `${prefix}_MODEL`, label: 'Main model', type: 'text', default: model, hint },
+  { key: `${prefix}_FALLBACK_MODEL`, label: 'Fallback model', type: 'text', ...(fallback ? { default: fallback } : {}), hint: 'Optional. Tried once when the main model is busy, before the next provider.' },
+];
+/** The other AI providers. Field keys follow <PREFIX>_API_KEY / _MODEL / _FALLBACK_MODEL (common/config.ts aiProviderFrom). */
+const AI_PROVIDER_CARDS: KindDef[] = [
+  {
+    kind: 'anthropic', group: 'AI', label: 'Anthropic Claude', scope: 'org', testable: true,
+    summary: 'Claude for the copilot chat, document reading and project from a brief. Reads PDFs and images.',
+    fields: [{ key: 'ANTHROPIC_API_KEY', label: 'API key', type: 'secret', required: true, placeholder: 'sk-ant-…' }, ...aiModels('ANTHROPIC', 'claude-opus-5-5', 'claude-haiku-5-5', 'claude-opus-5-5 is the most capable; claude-haiku-5-5 costs far less.')],
+    steps: ['Open the Claude Console, sign in, and go to API keys → Create key.', 'Copy the key here. Add credit under Billing if the account has none.', AI_ORDER_STEP, 'Save and press Test.'],
+    links: [{ label: 'Claude Console API keys', href: 'https://console.anthropic.com/settings/keys' }, { label: 'Claude models and prices', href: 'https://docs.claude.com/en/docs/about-claude/models/overview' }],
+    next: { label: 'Choose the order', href: '/settings#ai' },
+  },
+  {
+    kind: 'openai', group: 'AI', label: 'OpenAI', scope: 'org', testable: true,
+    summary: 'OpenAI GPT models for the copilot chat, document reading and project from a brief. Reads PDFs and images.',
+    fields: [{ key: 'OPENAI_API_KEY', label: 'API key', type: 'secret', required: true, placeholder: 'sk-…' }, ...aiModels('OPENAI', 'gpt-5-mini', 'gpt-5-nano', 'Any chat model your key can use, from platform.openai.com/docs/models.')],
+    steps: ['Open platform.openai.com, sign in, and go to API keys → Create new secret key.', 'Copy the key here. OpenAI needs a little prepaid credit before the key works.', AI_ORDER_STEP, 'Save and press Test.'],
+    links: [{ label: 'OpenAI API keys', href: 'https://platform.openai.com/api-keys' }, { label: 'OpenAI models', href: 'https://platform.openai.com/docs/models' }],
+    next: { label: 'Choose the order', href: '/settings#ai' },
+  },
+  {
+    kind: 'groq', group: 'AI', label: 'Groq (free tier)', scope: 'org', testable: true,
+    summary: 'Very fast open models (Llama and others) with a free tier. Text only: no PDFs or images.',
+    fields: [{ key: 'GROQ_API_KEY', label: 'API key', type: 'secret', required: true, placeholder: 'gsk_…' }, ...aiModels('GROQ', 'llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'Pick a model that supports tool use, from console.groq.com/docs/models.')],
+    steps: ['Open console.groq.com and sign in (free, no card needed).', 'Go to API Keys → Create API Key and copy it here.', 'The free tier has per-minute and per-day limits; when they run out the copilot moves to the next provider.', AI_ORDER_STEP, 'Save and press Test.'],
+    links: [{ label: 'Groq API keys', href: 'https://console.groq.com/keys' }, { label: 'Groq free tier limits', href: 'https://console.groq.com/docs/rate-limits' }],
+    next: { label: 'Choose the order', href: '/settings#ai' },
+  },
+  {
+    kind: 'openrouter', group: 'AI', label: 'OpenRouter (free models)', scope: 'org', testable: true,
+    summary: 'One key for hundreds of models, including free ones (names ending in :free). Reads PDFs.',
+    fields: [{ key: 'OPENROUTER_API_KEY', label: 'API key', type: 'secret', required: true, placeholder: 'sk-or-…' }, ...aiModels('OPENROUTER', 'meta-llama/llama-3.3-70b-instruct:free', null, 'Free models end in :free (see openrouter.ai/models?q=free). Pick one that supports tools.')],
+    steps: ['Open openrouter.ai, sign in, and go to Keys → Create key.', 'Copy the key here. Free models need no credit but have daily limits; adding a small credit raises them.', 'Free models may log prompts. Do not use them for confidential client work.', AI_ORDER_STEP, 'Save and press Test.'],
+    links: [{ label: 'OpenRouter keys', href: 'https://openrouter.ai/settings/keys' }, { label: 'Free models', href: 'https://openrouter.ai/models?q=free' }],
+    next: { label: 'Choose the order', href: '/settings#ai' },
+  },
+  {
+    kind: 'mistral', group: 'AI', label: 'Mistral (free tier)', scope: 'org', testable: true,
+    summary: 'Mistral models, with a free experiment plan. Reads images.',
+    fields: [{ key: 'MISTRAL_API_KEY', label: 'API key', type: 'secret', required: true }, ...aiModels('MISTRAL', 'mistral-small-latest', 'open-mistral-nemo', 'Model names from docs.mistral.ai/getting-started/models.')],
+    steps: ['Open console.mistral.ai and sign in. Choose the free Experiment plan if asked (needs a phone number).', 'Go to API Keys → Create new key and copy it here.', 'On the free plan Mistral may use prompts to improve its models.', AI_ORDER_STEP, 'Save and press Test.'],
+    links: [{ label: 'Mistral API keys', href: 'https://console.mistral.ai/api-keys' }, { label: 'Mistral models', href: 'https://docs.mistral.ai/getting-started/models/' }],
+    next: { label: 'Choose the order', href: '/settings#ai' },
+  },
+  {
+    kind: 'deepseek', group: 'AI', label: 'DeepSeek', scope: 'org', testable: true,
+    summary: 'Low-cost DeepSeek models. Text only: no PDFs or images.',
+    fields: [{ key: 'DEEPSEEK_API_KEY', label: 'API key', type: 'secret', required: true, placeholder: 'sk-…' }, ...aiModels('DEEPSEEK', 'deepseek-chat', null, 'deepseek-chat supports tool use.')],
+    steps: ['Open platform.deepseek.com, sign in, and go to API keys → Create new API key.', 'Copy the key here and top up a small balance.', 'DeepSeek processes data in China. Check that suits your clients before using it.', AI_ORDER_STEP, 'Save and press Test.'],
+    links: [{ label: 'DeepSeek API keys', href: 'https://platform.deepseek.com/api_keys' }],
+    next: { label: 'Choose the order', href: '/settings#ai' },
+  },
+  {
+    kind: 'openai_compatible', group: 'AI', label: 'Own AI server (Ollama, LM Studio, vLLM or any OpenAI-compatible API)', scope: 'org', testable: true,
+    summary: 'A model you run yourself, free and private, or any other service with an OpenAI-compatible API. Text only.',
+    fields: [
+      { key: 'AI_COMPAT_NAME', label: 'Name shown to people', type: 'text', placeholder: 'Ollama' },
+      { key: 'AI_COMPAT_URL', label: 'API address', type: 'url', required: true, placeholder: 'http://192.168.1.20:11434/v1', hint: 'The address that ends in /v1. Only the organisation that runs this server may use a private or http:// address.' },
+      { key: 'AI_COMPAT_API_KEY', label: 'API key', type: 'secret', hint: 'Leave empty for Ollama and LM Studio.' },
+      { key: 'AI_COMPAT_MODEL', label: 'Main model', type: 'text', required: true, placeholder: 'llama3.1', hint: 'Use a model that supports tool calling (for example llama3.1, qwen2.5 or mistral-nemo).' },
+      { key: 'AI_COMPAT_FALLBACK_MODEL', label: 'Fallback model', type: 'text', hint: 'Optional.' },
+    ],
+    steps: ['Ollama: install it on a machine the SampTrek server can reach, run `ollama pull llama3.1`, and start it with OLLAMA_HOST=0.0.0.0 so it listens on the network.', 'Enter its address with /v1 at the end, for example http://192.168.1.20:11434/v1, and the model name.', 'For another service, enter its OpenAI-compatible address, key and model.', AI_ORDER_STEP, 'Save and press Test.'],
+    links: [{ label: 'Ollama', href: 'https://ollama.com' }, { label: 'Ollama OpenAI compatibility', href: 'https://github.com/ollama/ollama/blob/main/docs/openai.md' }],
+    next: { label: 'Choose the order', href: '/settings#ai' },
+  },
 ];
 
 export const CATALOG: KindDef[] = [
@@ -189,8 +264,8 @@ export const CATALOG: KindDef[] = [
   {
     kind: 'gemini',
     group: 'AI',
-    label: 'AI copilot and voice (Google Gemini)',
-    summary: 'Powers the copilot chat, document reading and the voice assistant.',
+    label: 'Google Gemini (free tier, voice)',
+    summary: 'The copilot chat, document reading and the only provider with live voice. Free tier in Google AI Studio.',
     scope: 'org',
     fields: [
       { key: 'GEMINI_API_KEY', label: 'Gemini API key', type: 'secret', required: true },
@@ -211,6 +286,7 @@ export const CATALOG: KindDef[] = [
     testable: true,
     next: { label: 'Choose who can use it', href: '/settings#ai' },
   },
+  ...AI_PROVIDER_CARDS,
   {
     kind: 'zoho_books',
     group: 'Accounting',

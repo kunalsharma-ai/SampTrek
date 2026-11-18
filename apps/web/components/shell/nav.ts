@@ -34,7 +34,7 @@ export const NAV: NavItem[] = [
   { href: '/copilot', label: 'AI copilot', icon: Sparkles, group: 'Workspace', keywords: 'assistant ai gemini voice ask chat summarise report', feature: 'copilot' },
   { href: '/help', label: 'Help', icon: LifeBuoy, group: 'Workspace', keywords: 'help guide how to manual screenshots tutorial faq uid vid questions support' },
   { href: '/portal-access', label: 'Portal access', icon: KeyRound, group: 'Admin', keywords: 'client vendor logins', feature: 'portal_access' },
-  { href: '/settings/integrations', label: 'Integrations', icon: PlugZap, group: 'Admin', keywords: 'connect email smtp zoho mail google microsoft sso sign-in gemini ai api key zoho books xero quickbooks tally sampbidx bidzo setup keys', adminOnly: true, feature: 'integrations' },
+  { href: '/settings/integrations', label: 'Integrations', icon: PlugZap, group: 'Admin', keywords: 'connect email smtp zoho mail google microsoft sso sign-in gemini claude anthropic openai groq openrouter mistral deepseek ollama ai api key zoho books xero quickbooks tally sampbidx bidzo setup keys', adminOnly: true, feature: 'integrations' },
   { href: '/settings/team', label: 'Team', icon: Users, group: 'Admin', keywords: 'staff users invite people roles deactivate password', adminOnly: true, feature: 'team' },
   { href: '/settings/features', label: 'Features & access', icon: ToggleRight, group: 'Admin', keywords: 'features access permissions plan allow chat who can use turn off hide users roles', adminOnly: true, feature: 'team' },
   { href: '/settings/privacy', label: 'Privacy', icon: ShieldCheck, group: 'Admin', keywords: 'gdpr retention consent erase delete anonymise personal data', adminOnly: true, feature: 'privacy' },

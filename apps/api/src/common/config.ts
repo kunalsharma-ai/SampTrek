@@ -161,21 +161,85 @@ export function ledgersFrom(env: EnvMap) {
 export type LedgerApps = ReturnType<typeof ledgersFrom>;
 
 /**
- * AI copilot and voice (docs/AI_COPILOT.md). Google Gemini through an AI Studio key, kept on the
- * server. Model names move often, so each is a setting with a current default.
+ * AI copilot, project from a brief and voice (docs/AI_COPILOT.md). Each AI provider is its own
+ * integration with its own key, kept in the database. An organisation can set up several; the
+ * copilot uses them in the order chosen in Settings → AI copilot and moves to the next one when a
+ * provider is busy, out of free allowance or refuses the key. Model names move often, so each is a
+ * setting with a current default.
  */
-export function aiFrom(env: EnvMap): { provider: 'gemini'; apiKey: string; apiUrl: string; model: string; fallbackModel: string | null; liveModel: string } | null {
+export const AI_KINDS = ['gemini', 'anthropic', 'openai', 'groq', 'openrouter', 'mistral', 'deepseek', 'openai_compatible'] as const;
+export type AiKind = (typeof AI_KINDS)[number];
+export const isAiKind = (k: string): k is AiKind => (AI_KINDS as readonly string[]).includes(k);
+
+export interface AiConfig {
+  provider: AiKind;
+  /** Shown to people, e.g. "Groq". */
+  label: string;
+  /** null for a local server that needs no key (Ollama). */
+  apiKey: string | null;
+  apiUrl: string;
+  model: string;
+  fallbackModel: string | null;
+  /** Gemini Live only. */
+  liveModel: string | null;
+  /** Attached file types (PDF, images) the provider reads directly. Text files always work. */
+  files: string[];
+  /** Can write down a spoken question (tap to talk). */
+  audio: boolean;
+}
+
+const IMAGES = ['image/png', 'image/jpeg', 'image/webp'];
+interface AiDef { label: string; prefix: string; url: string; model: string; fallback: string | null; files: string[] }
+/** The OpenAI-style providers and Claude. Gemini has its own field names (GEMINI_API_KEY, AI_MODEL) from before. */
+export const AI_DEFS: Record<Exclude<AiKind, 'gemini'>, AiDef> = {
+  anthropic: { label: 'Anthropic Claude', prefix: 'ANTHROPIC', url: 'https://api.anthropic.com', model: 'claude-opus-5-5', fallback: 'claude-haiku-5-5', files: ['application/pdf', ...IMAGES] },
+  openai: { label: 'OpenAI', prefix: 'OPENAI', url: 'https://api.openai.com/v1', model: 'gpt-5-mini', fallback: 'gpt-5-nano', files: ['application/pdf', ...IMAGES] },
+  groq: { label: 'Groq', prefix: 'GROQ', url: 'https://api.groq.com/openai/v1', model: 'llama-3.3-70b-versatile', fallback: 'llama-3.1-8b-instant', files: [] },
+  openrouter: { label: 'OpenRouter', prefix: 'OPENROUTER', url: 'https://openrouter.ai/api/v1', model: 'meta-llama/llama-3.3-70b-instruct:free', fallback: null, files: ['application/pdf'] },
+  mistral: { label: 'Mistral', prefix: 'MISTRAL', url: 'https://api.mistral.ai/v1', model: 'mistral-small-latest', fallback: 'open-mistral-nemo', files: IMAGES },
+  deepseek: { label: 'DeepSeek', prefix: 'DEEPSEEK', url: 'https://api.deepseek.com/v1', model: 'deepseek-chat', fallback: null, files: [] },
+  openai_compatible: { label: 'Own AI server', prefix: 'AI_COMPAT', url: '', model: '', fallback: null, files: [] },
+};
+
+/** Google Gemini (AI Studio key): the only provider with live voice and speech-to-text. */
+export function aiFrom(env: EnvMap): AiConfig | null {
   const key = env.GEMINI_API_KEY?.trim();
   if (!key) return null;
   return {
     provider: 'gemini',
+    label: 'Google Gemini',
     apiKey: key,
     apiUrl: (env.GEMINI_API_URL?.trim() || 'https://generativelanguage.googleapis.com').replace(/\/$/, ''),
     model: env.AI_MODEL?.trim() || 'gemini-3.8-flash',
     fallbackModel: env.AI_FALLBACK_MODEL === '' ? null : env.AI_FALLBACK_MODEL?.trim() || 'gemini-3.5-flash-lite',
     liveModel: env.AI_LIVE_MODEL?.trim() || 'gemini-3.8-live',
+    files: ['application/pdf', ...IMAGES],
+    audio: true,
   };
 }
-export type AiConfig = NonNullable<ReturnType<typeof aiFrom>>;
+
+/** Any AI provider from its saved fields; null when it is not set up. `<PREFIX>_API_URL` overrides the address (tests). */
+export function aiProviderFrom(kind: AiKind, env: EnvMap): AiConfig | null {
+  if (kind === 'gemini') return aiFrom(env);
+  const d = AI_DEFS[kind];
+  const v = (k: string) => env[`${d.prefix}_${k}`]?.trim() ?? '';
+  const key = v('API_KEY');
+  const own = kind === 'openai_compatible';
+  const url = (own ? v('URL') : v('API_URL') || d.url).replace(/\/$/, '');
+  const model = v('MODEL') || d.model;
+  if (own ? !url || !model : !key) return null;
+  const fallback = env[`${d.prefix}_FALLBACK_MODEL`] === '' ? null : v('FALLBACK_MODEL') || d.fallback;
+  return {
+    provider: kind,
+    label: own ? v('NAME') || d.label : d.label,
+    apiKey: key || null,
+    apiUrl: url,
+    model,
+    fallbackModel: fallback && fallback !== model ? fallback : null,
+    liveModel: null,
+    files: d.files,
+    audio: false,
+  };
+}
 export type SmtpConfig = NonNullable<ReturnType<typeof smtpFrom>>;
 export type ZohoBooksConfig = NonNullable<ReturnType<typeof zohoBooksFrom>>;
