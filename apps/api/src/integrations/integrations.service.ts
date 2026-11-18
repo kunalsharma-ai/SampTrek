@@ -18,7 +18,7 @@ import { CurrentUser, Roles } from '../auth/decorators';
 import { AuthUser } from '../auth/auth.types';
 import { decryptSecret, encryptSecret } from '../auth/totp';
 import { providerSettings, ProviderSettings, SsoProvider } from '../auth/oidc';
-import { AI_DEFS, AI_KINDS, aiFrom, AiConfig, AiKind, aiProviderFrom, config, EnvMap, ledgersFrom, smtpFrom, SmtpConfig, zohoBooksFrom, ZohoBooksConfig, zohoBooksMissingFrom } from '../common/config';
+import { AI_DEFS, AI_KINDS, aiFrom, AiConfig, AiKind, aiProviderFrom, config, EnvMap, ledgersFrom, smtpFrom, SmtpConfig, smtpTransportOptions, zohoBooksFrom, ZohoBooksConfig, zohoBooksMissingFrom } from '../common/config';
 import { ZodPipe } from '../common/zod.pipe';
 import { PrismaService } from '../prisma/prisma.service';
 import { EntitlementsService } from '../super-admin/entitlements';
@@ -73,7 +73,7 @@ export class IntegrationsService implements OnApplicationBootstrap {
   lookup: (host: string) => Promise<string[]> = async (host) => (await dns.lookup(host, { all: true })).map((a) => a.address);
   /** Checks SMTP sign-in and sends the test email. Swappable in tests. */
   smtpCheck: (c: SmtpConfig, to: string, fromName: string) => Promise<void> = async (c, to, fromName) => {
-    const t = nodemailer.createTransport({ host: c.host, port: c.port, secure: c.secure, auth: { user: c.user, pass: c.pass }, connectionTimeout: 15_000, greetingTimeout: 15_000, socketTimeout: 20_000 });
+    const t = nodemailer.createTransport(smtpTransportOptions(c, 20_000));
     try {
       await t.verify();
       const address = /<([^>]+)>/.exec(c.from)?.[1] ?? c.from;
@@ -527,7 +527,8 @@ export class IntegrationsService implements OnApplicationBootstrap {
           await this.smtpCheck(c, me.email, 'SampTrek');
         } catch (e) {
           const m = (e as Error).message;
-          if (/auth|535|credentials/i.test(m)) return { ok: false, message: `${c.host} did not accept the mailbox and password. Use a Zoho app password, and check the server matches your data centre (smtp.zoho.in for India). (${m.slice(0, 160)})` };
+          if (/auth|535|credentials/i.test(m)) return { ok: false, message: `${c.host} did not accept the mailbox and password. Use a Zoho app password, and check the server matches your Zoho account (smtppro.zoho.in for organisation mailboxes in India, smtp.zoho.in for personal ones). (${m.slice(0, 160)})` };
+          if (/wrong version number|ssl|tls/i.test(m)) return { ok: false, message: `Could not start an encrypted connection to ${c.host}:${c.port}. Use SSL/TLS with port 465, or STARTTLS with port 587. (${m.slice(0, 160)})` };
           return { ok: false, message: `Could not send through ${c.host}:${c.port}: ${m.slice(0, 200)}` };
         }
         return { ok: true, message: `Signed in to ${c.host} and sent a test email to ${me.email}.` };

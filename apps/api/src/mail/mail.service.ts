@@ -1,6 +1,6 @@
 import { Global, Injectable, Logger, Module } from '@nestjs/common';
 import * as nodemailer from 'nodemailer';
-import { SmtpConfig } from '../common/config';
+import { SmtpConfig, smtpTransportOptions } from '../common/config';
 import { IntegrationsService } from '../integrations/integrations.service';
 
 export interface Mail {
@@ -45,7 +45,7 @@ export class MailService {
     let t = this.cached.get(key);
     if (!t) {
       if (this.cached.size > 50) this.cached.clear();
-      t = nodemailer.createTransport({ host: s.host, port: s.port, secure: s.secure, auth: { user: s.user, pass: s.pass }, connectionTimeout: 15_000, greetingTimeout: 15_000, socketTimeout: 30_000 });
+      t = nodemailer.createTransport(smtpTransportOptions(s));
       this.cached.set(key, t);
     }
     return t;

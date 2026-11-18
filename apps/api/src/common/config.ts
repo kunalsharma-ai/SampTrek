@@ -78,16 +78,19 @@ export const config = {
 export type EnvMap = Record<string, string | undefined>;
 
 /**
- * Outgoing email (docs/INTEGRATIONS.md). Zoho Mail SMTP by default: smtp.zoho.com, or
- * smtp.zoho.in / smtp.zoho.eu for accounts in those data centres. Null when not set up.
+ * Outgoing email (docs/INTEGRATIONS.md). Zoho Mail SMTP by default: smtppro.zoho.in on port 465
+ * with SSL, signing in as the sending mailbox. Every part is editable in Settings → Integrations.
+ * Null when not set up.
  */
+export const SMTP_DEFAULTS = { host: 'smtppro.zoho.in', port: 465, secure: true } as const;
+
 export function smtpFrom(env: EnvMap): { host: string; port: number; secure: boolean; user: string; pass: string; from: string } | null {
   const user = env.SMTP_USER?.trim();
   const pass = env.SMTP_PASS;
   if (!user || !pass) return null;
-  const port = Number(env.SMTP_PORT || 465);
+  const port = Number(env.SMTP_PORT || SMTP_DEFAULTS.port);
   return {
-    host: env.SMTP_HOST?.trim() || 'smtp.zoho.com',
+    host: env.SMTP_HOST?.trim() || SMTP_DEFAULTS.host,
     port,
     secure: env.SMTP_SECURE ? env.SMTP_SECURE === 'true' : port === 465,
     user,
@@ -242,4 +245,24 @@ export function aiProviderFrom(kind: AiKind, env: EnvMap): AiConfig | null {
   };
 }
 export type SmtpConfig = NonNullable<ReturnType<typeof smtpFrom>>;
+
+/**
+ * The nodemailer transport for the stored mail settings, in Zoho's recommended shape:
+ * host smtppro.zoho.in, port 465, secure: true (SSL/TLS), auth.user = the sending mailbox and
+ * auth.pass = its app password. User and password always come from the database, never .env.
+ */
+export function smtpTransportOptions(c: SmtpConfig, socketTimeout = 30_000) {
+  return {
+    host: c.host,
+    port: c.port,
+    secure: c.secure, // SSL/TLS
+    auth: {
+      user: c.user,
+      pass: c.pass,
+    },
+    connectionTimeout: 15_000,
+    greetingTimeout: 15_000,
+    socketTimeout,
+  };
+}
 export type ZohoBooksConfig = NonNullable<ReturnType<typeof zohoBooksFrom>>;

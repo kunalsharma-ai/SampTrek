@@ -54,7 +54,7 @@ or shown on screen.
 4. Set these on the API server and restart it:
 
 ```
-SMTP_HOST=smtp.zoho.com        # smtp.zoho.in for India, smtp.zoho.eu for EU accounts
+SMTP_HOST=smtppro.zoho.in      # Zoho organisation mailbox in India (smtppro.zoho.com / .eu elsewhere)
 SMTP_PORT=465                  # SSL; or 587 with SMTP_SECURE=false (STARTTLS)
 SMTP_USER=reports@yourcompany.com
 SMTP_PASS=<the app-specific password>
