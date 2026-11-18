@@ -15,6 +15,21 @@ Every integration is set up by an admin in the app at **Settings → Integration
 | Backup storage (server folder, Cloudflare R2, Backblaze B2, any S3 bucket) | Admins of the organisation that runs the server only | Writes, reads and deletes a test file, and checks `mongodump` (docs/BACKUPS.md) |
 | IP and proxy reputation (fraud checks) | Each organisation's admin | Says which free IP lists are loaded, and asks proxycheck.io whether it accepts the free key. See [FRAUD_CHECKS.md](FRAUD_CHECKS.md) |
 
+### Email sending (Zoho Mail)
+
+SampTrek sends mail through nodemailer with Zoho's recommended settings, filled in by default and editable in Settings → Integrations → Email sending:
+
+```ts
+nodemailer.createTransport({
+  host: 'smtppro.zoho.in', // SMTP server field
+  port: 465,               // Port field
+  secure: true,            // Encryption field: SSL/TLS
+  auth: { user: mailbox, pass: appPassword }, // read from the database, never .env
+});
+```
+
+`mailbox` is the sending address (the Mailbox field) and `appPassword` is the Zoho app password, stored encrypted. Personal Zoho accounts use `smtp.zoho.in` instead; for port 587 pick STARTTLS. Settings saved before this change keep their server; the encryption follows the port until it is set.
+
 Captcha keys, the SampBidx webhook secret, alert webhooks and API keys were already set in the app (Settings, and Settings → API and webhooks).
 
 The SampAudience connection (audiences from the SUPPLY360 panels) is set here too, under **SampAudience**, by the admins of the organisation that runs the server; see [SAMPLEON_INTEGRATION.md](SAMPLEON_INTEGRATION.md).
