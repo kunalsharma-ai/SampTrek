@@ -1,21 +1,20 @@
-import { smtpFrom, smtpTransportOptions } from '../../src/common/config';
+import { smtpFrom } from '../../src/common/config';
 import { KIND } from '../../src/integrations/catalog';
 
-describe('Zoho SMTP transport', () => {
+describe('Zoho SMTP settings', () => {
   it('defaults to smtppro.zoho.in on port 465 with SSL, signing in as the sending mailbox', () => {
-    const c = smtpFrom({ SMTP_USER: 'reports@company.test', SMTP_PASS: 'stored-app-password' })!;
-    expect(smtpTransportOptions(c)).toMatchObject({
+    expect(smtpFrom({ SMTP_USER: 'reports@company.test', SMTP_PASS: 'stored-app-password' })).toMatchObject({
       host: 'smtppro.zoho.in',
       port: 465,
       secure: true,
-      auth: { user: 'reports@company.test', pass: 'stored-app-password' },
+      user: 'reports@company.test',
+      pass: 'stored-app-password',
+      from: 'reports@company.test',
     });
-    expect(c.from).toBe('reports@company.test');
   });
 
   it('keeps the server, port and encryption editable', () => {
-    const c = smtpFrom({ SMTP_HOST: 'smtppro.zoho.com', SMTP_PORT: '587', SMTP_SECURE: 'false', SMTP_USER: 'a@b.test', SMTP_PASS: 'p' })!;
-    expect(smtpTransportOptions(c)).toMatchObject({ host: 'smtppro.zoho.com', port: 587, secure: false });
+    expect(smtpFrom({ SMTP_HOST: 'smtppro.zoho.com', SMTP_PORT: '587', SMTP_SECURE: 'false', SMTP_USER: 'a@b.test', SMTP_PASS: 'p' })).toMatchObject({ host: 'smtppro.zoho.com', port: 587, secure: false });
     // Older saved settings without the encryption choice follow the port.
     expect(smtpFrom({ SMTP_PORT: '587', SMTP_USER: 'a@b.test', SMTP_PASS: 'p' })!.secure).toBe(false);
   });
