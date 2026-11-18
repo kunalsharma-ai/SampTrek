@@ -175,6 +175,7 @@ export const CATALOG: KindDef[] = [
         default: 'smtppro.zoho.in',
         placeholder: 'smtppro.zoho.in',
         hint: 'Zoho Mail for an organisation (your own domain): smtppro.zoho.in in India, smtppro.zoho.com or smtppro.zoho.eu elsewhere. Personal Zoho accounts use smtp.zoho.in / smtp.zoho.com. Any other SMTP server works too.',
+        hint: 'Zoho Mail for an organisation (your own domain) in India: smtppro.zoho.in. Personal Zoho accounts use smtp.zoho.in; other data centres use smtppro.zoho.com or smtppro.zoho.eu. Any other SMTP server works too.',
       },
       { key: 'SMTP_PORT', label: 'Port', type: 'select', default: '465', options: [{ value: '465', label: '465 (SSL, recommended)' }, { value: '587', label: '587 (STARTTLS)' }] },
       {
@@ -193,6 +194,7 @@ export const CATALOG: KindDef[] = [
       'Sign in to Zoho with the mailbox that will send (for example reports@yourcompany.com).',
       'Open My Account → Security → App passwords, choose Generate new password, name it SampTrek and copy it.',
       'Keep the defaults for Zoho Mail in India: server smtppro.zoho.in, port 465, SSL/TLS. Change the server if your mailbox is in another data centre (smtppro.zoho.com, smtppro.zoho.eu).',
+      'Keep the SMTP server smtppro.zoho.in and port 465 (SSL) for a company mailbox at zoho.in, or pick the server for your Zoho account type and data centre.',
       'Enter the mailbox and the app password here, save, then press Test. A test email is sent to you.',
     ],
     links: [

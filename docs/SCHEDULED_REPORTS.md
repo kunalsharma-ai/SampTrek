@@ -42,8 +42,8 @@ report's UTC day boundaries, the same way the Reports screens filter dates.
 
 ## Setting up Zoho Mail
 
-The SMTP settings live only in the API's environment. They are never stored in the database
-or shown on screen.
+The SMTP settings are stored in the database (encrypted) and managed by an admin in
+**Settings → Integrations → Email sending (Zoho Mail)**. Nothing goes in `.env` or config files.
 
 1. In Zoho Mail, pick (or create) the mailbox that sends reports, for example
    `reports@yourcompany.com`.
@@ -51,7 +51,7 @@ or shown on screen.
    Passwords (needed when two-factor sign-in is on, and recommended anyway).
 3. Make sure SMTP access is allowed for that mailbox: Zoho Mail → Settings → Mail Accounts →
    IMAP/POP/SMTP access.
-4. Set these on the API server and restart it:
+4. In Settings → Integrations → Email sending, enter:
 
 ```
 SMTP_HOST=smtppro.zoho.in      # Zoho organisation mailbox in India (smtppro.zoho.com / .eu elsewhere)
@@ -59,11 +59,27 @@ SMTP_PORT=465                  # SSL; or 587 with SMTP_SECURE=false (STARTTLS)
 SMTP_USER=reports@yourcompany.com
 SMTP_PASS=<the app-specific password>
 MAIL_FROM="SampTrek Reports <reports@yourcompany.com>"
+| Field | Value |
+|---|---|
+| SMTP server | `smtppro.zoho.in` (the default; `smtp.zoho.in` for a personal Zoho account, `smtppro.zoho.com` / `smtppro.zoho.eu` for other data centres) |
+| Port | `465` (SSL/TLS, the default; `587` uses STARTTLS) |
+| Mailbox (username) | `reports@yourcompany.com`, the sending mailbox |
+| App password | the app-specific password |
+| From address | `SampTrek Reports <reports@yourcompany.com>` (optional; empty = the mailbox) |
+
+The API then sends with this nodemailer transport:
+
+```js
+nodemailer.createTransport({
+  host: 'smtppro.zoho.in',
+  port: 465,
+  secure: true, // SSL/TLS
+  auth: { user: sender, pass }, // the mailbox and app password saved above
+});
 ```
 
-`MAIL_FROM` must be the same mailbox or an alias Zoho lets it send as. Use the host for the data
-centre your Zoho account is in (the domain you sign in at: zoho.com, zoho.in, zoho.eu). Then use
-**Send me a test email** on the Scheduled reports page.
+The From address must be the same mailbox or an alias Zoho lets it send as. Press **Test** on the
+integration (or **Send me a test email** on the Scheduled reports page) to check it.
 
 Zoho Mail limits how much one mailbox sends per day. Scheduled reports are small in number, but
 if volume grows a lot, Zoho ZeptoMail (Zoho's transactional email service) also speaks SMTP:

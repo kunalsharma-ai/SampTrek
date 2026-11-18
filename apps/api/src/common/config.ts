@@ -83,6 +83,13 @@ export type EnvMap = Record<string, string | undefined>;
  * Null when not set up.
  */
 export const SMTP_DEFAULTS = { host: 'smtppro.zoho.in', port: 465, secure: true } as const;
+ * Outgoing email (docs/INTEGRATIONS.md), read from Settings → Integrations (the database), never
+ * hard-coded. Zoho Mail SMTP by default: smtppro.zoho.in, port 465, SSL/TLS (secure: true), with the
+ * sending mailbox as the user. Other Zoho hosts (smtp.zoho.in for personal accounts, smtppro.zoho.com
+ * or smtppro.zoho.eu for other data centres) or any SMTP server can be entered instead. Null when not set up.
+ */
+/** Defaults for the Zoho Mail SMTP transport when the admin leaves a field empty. */
+export const SMTP_DEFAULTS = { host: 'smtppro.zoho.in', port: 465 } as const;
 
 export function smtpFrom(env: EnvMap): { host: string; port: number; secure: boolean; user: string; pass: string; from: string } | null {
   const user = env.SMTP_USER?.trim();
@@ -92,7 +99,7 @@ export function smtpFrom(env: EnvMap): { host: string; port: number; secure: boo
   return {
     host: env.SMTP_HOST?.trim() || SMTP_DEFAULTS.host,
     port,
-    secure: env.SMTP_SECURE ? env.SMTP_SECURE === 'true' : port === 465,
+    secure: env.SMTP_SECURE ? env.SMTP_SECURE === 'true' : port === SMTP_DEFAULTS.port,
     user,
     pass,
     from: env.MAIL_FROM?.trim() || user,
