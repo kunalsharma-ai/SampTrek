@@ -53,12 +53,6 @@ The SMTP settings are stored in the database (encrypted) and managed by an admin
    IMAP/POP/SMTP access.
 4. In Settings → Integrations → Email sending, enter:
 
-```
-SMTP_HOST=smtppro.zoho.in      # Zoho organisation mailbox in India (smtppro.zoho.com / .eu elsewhere)
-SMTP_PORT=465                  # SSL; or 587 with SMTP_SECURE=false (STARTTLS)
-SMTP_USER=reports@yourcompany.com
-SMTP_PASS=<the app-specific password>
-MAIL_FROM="SampTrek Reports <reports@yourcompany.com>"
 | Field | Value |
 |---|---|
 | SMTP server | `smtppro.zoho.in` (the default; `smtp.zoho.in` for a personal Zoho account, `smtppro.zoho.com` / `smtppro.zoho.eu` for other data centres) |
