@@ -13,7 +13,7 @@ import { MAX_FILE_BYTES, RequestsService } from './requests.service';
 
 const KINDS = ['QUESTION', 'ISSUE', 'DISPUTE'] as const;
 const STATUSES = ['OPEN', 'ANSWERED', 'CLOSED'] as const;
-const FILE_KINDS = ['QUESTIONNAIRE', 'DELIVERABLE', 'COMPLIANCE', 'OTHER'] as const;
+const FILE_KINDS = ['QUESTIONNAIRE', 'SCREENER', 'ZIP_CODES', 'DELIVERABLE', 'COMPLIANCE', 'OTHER'] as const;
 const id = z.string().min(1).max(40);
 
 const listSchema = z.object({ status: z.enum(STATUSES).optional(), kind: z.enum(KINDS).optional(), clientId: id.optional(), vendorId: id.optional(), projectId: id.optional() });
@@ -42,6 +42,8 @@ const uploadSchema = z
     expiresAt: z.coerce.date().optional(),
     clientId: id.optional(),
     vendorId: id.optional(),
+    /** Project document every vendor of the project sees (feedback 2026-11-23). Multipart sends "true". */
+    vendorsAll: z.enum(['true', 'false']).transform((v) => v === 'true').optional(),
   })
   .strict();
 

@@ -29,6 +29,7 @@ import { IntegrationsModule } from './integrations/integrations.service';
 import { PrismaModule } from './prisma/prisma.service';
 import { PushModule } from './push/push';
 import { ProjectsModule } from './projects/projects.controller';
+import { RecycleBinModule } from './projects/recycle-bin';
 import { CustomOptionsModule } from './custom-options/custom-options';
 import { PartyLogosModule } from './parties/logos';
 import { DashboardLinksModule } from './dashboard-links/dashboard-links';
@@ -65,6 +66,7 @@ import { VendorsModule } from './vendors/vendors.controller';
     ClientsModule,
     VendorsModule,
     ProjectsModule,
+    RecycleBinModule,
     CustomOptionsModule,
     PartyLogosModule,
     ClientLinksModule,

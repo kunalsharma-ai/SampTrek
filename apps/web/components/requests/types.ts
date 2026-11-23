@@ -1,12 +1,14 @@
 export type RequestKind = 'QUESTION' | 'ISSUE' | 'DISPUTE';
 export type RequestStatus = 'OPEN' | 'ANSWERED' | 'CLOSED';
-export type FileKind = 'QUESTIONNAIRE' | 'DELIVERABLE' | 'COMPLIANCE' | 'OTHER';
+export type FileKind = 'QUESTIONNAIRE' | 'SCREENER' | 'ZIP_CODES' | 'DELIVERABLE' | 'COMPLIANCE' | 'OTHER';
 
 export interface SharedFile {
   id: string; kind: FileKind; name: string; contentType: string; size: number; note: string | null;
   expiresAt: string | null; expired: boolean; fromPortal: boolean; uploadedBy: string; mine: boolean; createdAt: string;
   project: { id: string; projectCode: string } | null; ticketId: string | null;
-  sharedWith?: { kind: 'client' | 'vendor'; id: string; name: string } | null;
+  sharedWith?: { kind: 'client' | 'vendor' | 'vendors'; id: string; name: string } | null;
+  /** Every vendor of the project sees it (feedback 2026-11-23). */
+  vendorsAll?: boolean;
 }
 
 export interface RequestRow {
@@ -27,7 +29,7 @@ export const KIND_LABEL: Record<RequestKind, string> = { QUESTION: 'Question', I
 export const STATUS_LABEL: Record<RequestStatus, string> = { OPEN: 'Waiting for us', ANSWERED: 'Answered', CLOSED: 'Closed' };
 export const PORTAL_STATUS_LABEL: Record<RequestStatus, string> = { OPEN: 'Waiting for reply', ANSWERED: 'Answered', CLOSED: 'Closed' };
 export const STATUS_TONE: Record<RequestStatus, string> = { OPEN: 'bg-warn/15 text-warn', ANSWERED: 'bg-info/15 text-info', CLOSED: 'bg-sunken text-muted' };
-export const FILE_KIND_LABEL: Record<FileKind, string> = { QUESTIONNAIRE: 'Questionnaire', DELIVERABLE: 'Deliverable', COMPLIANCE: 'Compliance', OTHER: 'Other' };
+export const FILE_KIND_LABEL: Record<FileKind, string> = { QUESTIONNAIRE: 'Questionnaire', SCREENER: 'Screener', ZIP_CODES: 'ZIP code file', DELIVERABLE: 'Deliverable', COMPLIANCE: 'Compliance', OTHER: 'Other' };
 export const FILE_ACCEPT = '.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.csv,.txt,.png,.jpg,.jpeg,.zip,.sav';
 
 export function fileSize(n: number) {

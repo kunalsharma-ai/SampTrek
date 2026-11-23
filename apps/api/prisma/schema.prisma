@@ -145,6 +145,7 @@ model Organization {
   limitAlerts            LimitAlert[]
   billingInvoices        BillingInvoice[]
   chatChannels           ChatChannel[]
+  vendorNotices          VendorNotice[]
 }
 
 enum OrgStatus {
@@ -443,6 +444,9 @@ model User {
   /// Super Admin: features turned off for this person on the web and in the app / in the app only.
   featuresOff        String[]        @default([])
   mobileFeaturesOff  String[]        @default([])
+  /// May move projects to the recycle bin and restore them. Admins always may; others only when an
+  /// admin turns this on (Settings → Team). Without it, Delete asks an admin (feedback 2026-11-23).
+  canDeleteProjects  Boolean         @default(false)
   /// Last authenticated request (written at most every 5 minutes).
   lastSeenAt         DateTime?
   passwordTokens     PasswordToken[]
@@ -561,6 +565,7 @@ model Vendor {
   sharedFiles   SharedFile[]
   quoteRequests QuoteRequest[]
   applications  VendorApplication[]
+  notices       VendorNotice[]
 
   @@unique([organizationId, code])
 }
@@ -635,6 +640,18 @@ model Project {
   autopilotState          Json?
   /// Speeder check: { enabled, fraction: "1/3" }. A complete faster than fraction × planned LOI becomes QUALITY_FAIL / SPEEDER.
   speederCheck            Json?
+  /// Quota and terminate notes from the client, pasted as text (Excel rows keep their tabs and show
+  /// as a table). Shown on Quotas & monitor and to every vendor of the project (feedback 2026-11-23).
+  quotaNotes              String?
+  quotaNotesUpdatedAt     DateTime?
+  /// Recycle bin (feedback 2026-11-23): a deleted project is hidden everywhere and removed for good
+  /// 30 days after deletedAt, unless someone restores it first.
+  deletedAt               DateTime?
+  deletedById             String?
+  /// Someone without the delete permission asked an admin to delete the project.
+  deleteRequestedAt       DateTime?
+  deleteRequestedById     String?
+  deleteRequestReason     String?
   /// Fraud rules (docs/FRAUD_CHECKS.md): { crossProject: { scope, projectIds, days, outcomes }, riskThreshold }.
   fraudRules              Json?
   redirectMode            RedirectMode           @default(HYBRID)
@@ -666,6 +683,7 @@ model Project {
   /// { "gate:<questionId>": { attribute, values: { <answerId>: value } } }; see src/sampleon/quota-translate.ts.
   sampleonQuotaMap  Json?
   chatChannel       ChatChannel?
+  vendorNotices     VendorNotice[]
 
   @@unique([organizationId, projectCode])
   @@index([organizationId, status])
@@ -1437,6 +1455,8 @@ model VendorBill {
   vendorReference  String?
   /// Bank or payment reference, recorded when paid.
   paymentReference String?
+  /// How it was paid: bank transfer, PayPal, Wise, UPI, cheque, cash or other (feedback 2026-11-23).
+  paymentMode      String?
   notes            String?
   approvedAt       DateTime?
   dueAt            DateTime?
@@ -2043,6 +2063,9 @@ model TicketMessage {
 
 enum SharedFileKind {
   QUESTIONNAIRE
+  /// Project documents for vendors (feedback 2026-11-23).
+  SCREENER
+  ZIP_CODES
   DELIVERABLE
   COMPLIANCE
   OTHER
@@ -2074,6 +2097,8 @@ model SharedFile {
   uploadedById   String
   /// True when a client or vendor user uploaded it.
   fromPortal     Boolean        @default(false)
+  /// Project document every vendor of the project can see and download (feedback 2026-11-23).
+  vendorsAll     Boolean        @default(false)
   createdAt      DateTime       @default(now())
 
   @@index([organizationId, projectId])
@@ -2557,4 +2582,26 @@ model ChatMessage {
   @@index([channelId, updatedAt])
   @@index([channelId, seq])
   @@index([organizationId, seq])
+}
+
+/// Something a vendor should know about a project it works on, shown in its portal with the time
+/// (feedback 2026-11-23): a new quota (market or vendor target, quota cells) or new quota notes.
+model VendorNotice {
+  id               String       @id @default(cuid()) @map("_id")
+  organizationId   String
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  vendorId         String
+  vendor           Vendor       @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  projectId        String
+  project          Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectCountryId String?
+  /// quota | notes | files | status
+  kind             String
+  title            String
+  detail           String
+  readAt           DateTime?
+  createdAt        DateTime  @default(now())
+
+  @@index([vendorId, createdAt])
+  @@index([projectId])
 }

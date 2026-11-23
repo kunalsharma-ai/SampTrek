@@ -1,3 +1,4 @@
+import { notifyVendors } from '../portal/vendor-notices';
 import { BadRequestException, Body, Controller, Get, Module, NotFoundException, Param, Patch, Put } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { z } from 'zod';
@@ -98,7 +99,14 @@ export class QuotasController {
         tx,
       );
     });
-    return this.prisma.quotaCell.findMany({ where: { projectCountryId: countryId }, orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }] });
+    const cells = await this.prisma.quotaCell.findMany({ where: { projectCountryId: countryId }, orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }] });
+    // Vendors on the market see the new quota cells in their portal (feedback 2026-11-23).
+    await notifyVendors(this.prisma, {
+      projectId: id, countryId, kind: 'quota',
+      title: (label, market) => `Quota cells updated for ${label}${market ? ` · ${market}` : ''}`,
+      detail: cells.length ? cells.map((x) => `${x.group ? `${x.group}: ` : ''}${x.name} ${x.completes}/${x.target}${x.isOpen ? '' : ' (closed)'}`).join(' · ') : 'Quota cells removed: only the market target applies.',
+    });
+    return cells;
   }
 
   /** Open or close one cell, or change its target, without editing the whole set. */
@@ -110,6 +118,13 @@ export class QuotasController {
     if (!cell) throw new NotFoundException('Quota cell not found');
     const updated = await this.prisma.quotaCell.update({ where: { id: quotaId }, data: body });
     await this.audit.record({ organizationId: u.organizationId, actorId: u.id, action: 'quotas.update', entityType: 'QuotaCell', entityId: quotaId, detail: body });
+    if ((body.target !== undefined && body.target !== cell.target) || (body.isOpen !== undefined && body.isOpen !== cell.isOpen)) {
+      await notifyVendors(this.prisma, {
+        projectId: id, countryId, kind: 'quota',
+        title: (label, market) => `Quota ${updated.isOpen ? 'changed' : 'closed'} for ${label}${market ? ` · ${market}` : ''}: ${updated.name}`,
+        detail: `${updated.group ? `${updated.group}: ` : ''}${updated.name} is ${updated.isOpen ? 'open' : 'closed'}, ${updated.completes} of ${updated.target} completes${body.target !== undefined && body.target !== cell.target ? ` (target was ${cell.target})` : ''}.`,
+      });
+    }
     return updated;
   }
 }

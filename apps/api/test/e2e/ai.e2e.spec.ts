@@ -123,10 +123,10 @@ describe('AI copilot (e2e)', () => {
   });
 
   it('proposes a task, and creates it only when the person confirms', async () => {
-    g.queue.push(g.call('create_task', { title: 'Send US quota update', assignee: 'viewer', project: 'Brand tracker', dueDate: '2026-11-20', priority: 'HIGH' }), g.text('I have prepared the task. Confirm it below.'));
+    g.queue.push(g.call('create_task', { title: 'Send US quota update', assignee: 'viewer', project: 'Brand tracker', dueDate: '2036-11-20', priority: 'HIGH' }), g.text('I have prepared the task. Confirm it below.'));
     const r = (await ask(pm, 'Create a task for the viewer to send the US quota update by Nov 20').expect(200)).body;
     const action = r.messages[1].actions[0];
-    expect(action).toMatchObject({ tool: 'create_task', status: 'pending', summary: expect.stringMatching(/^Create task "Send US quota update" for VIEWER on PRX\d+, due 2026-11-20, high priority$/) });
+    expect(action).toMatchObject({ tool: 'create_task', status: 'pending', summary: expect.stringMatching(/^Create task "Send US quota update" for VIEWER on PRX\d+, due 2036-11-20, high priority$/) });
     expect(await prisma.task.count()).toBe(0);
     expect(g.calls[1].body.contents.at(-1).parts[0].functionResponse.response.result.status).toBe('waiting_for_confirmation');
 
@@ -135,7 +135,7 @@ describe('AI copilot (e2e)', () => {
     expect(done.status).toBe('done');
     const task = await prisma.task.findFirstOrThrow();
     expect(task).toMatchObject({ title: 'Send US quota update', assigneeId: users.VIEWER.id, projectId, priority: 'HIGH', source: 'ai', createdById: users.PROJECT_MANAGER.id });
-    expect(task.dueAt?.toISOString()).toBe('2026-11-20T23:59:59.000Z');
+    expect(task.dueAt?.toISOString()).toBe('2036-11-20T23:59:59.000Z');
     await pm.post(`/ai/actions/${action.id}/confirm`).expect(400);
     expect(await prisma.auditEvent.count({ where: { action: { in: ['ai.action.proposed', 'ai.action.confirmed', 'task.create.ai'] } } })).toBe(3);
     // The conversation knows it happened, without showing the note on screen.

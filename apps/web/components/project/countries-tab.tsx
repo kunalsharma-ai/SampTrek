@@ -1,4 +1,5 @@
 'use client';
+import { ProjectBrief } from './project-brief';
 import { surveyLinkProblem } from '@/lib/survey-link';
 import { CopyIcon, Copyable } from '@/components/copy';
 import clsx from 'clsx';
@@ -300,8 +301,8 @@ export function CountriesTab({ project, editable, reload, security }: { project:
             <dt className="text-muted">Security</dt><dd>{security.length ? security.join(', ') : 'None'}</dd>
             <dt className="text-muted">Redirect mode</dt><dd>{project.redirectMode.toLowerCase()} (version {project.activeRedirectVersion?.version ?? '–'})</dd>
           </dl>
-          {project.description && <p className="mt-4 whitespace-pre-wrap border-t border-line pt-4 text-sm text-muted">{project.description}</p>}
         </Section>
+        <ProjectBrief project={project} editable={editable} reload={reload} />
       </div>
     </div>
   );

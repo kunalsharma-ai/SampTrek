@@ -161,6 +161,8 @@ const ROUTES: [RegExp, string | null, string?][] = [
   [/^security\/ip-lists(\/|$)/, 'fraud_checks'],
   [/^projects$/, 'projects.create', 'POST'],
   [/^project-drafts(\/|$)/, 'projects.create'],
+  // The recycle bin of deleted projects (feedback 2026-11-23).
+  [/^recycle-bin(\/|$)/, 'projects'],
   [/^(projects|project-templates|quotes|callbacks|question-templates|security|custom-options)(\/|$)/, 'projects'],
 ];
 

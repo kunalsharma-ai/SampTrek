@@ -19,6 +19,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { money, taxSchema, withTax } from './finance.service';
 import { currencyOf, sessionGroups } from '../prisma/session-totals';
 
+export const PAYMENT_MODES = ['BANK_TRANSFER', 'PAYPAL', 'WISE', 'UPI', 'CHEQUE', 'CASH', 'CARD', 'OTHER'] as const;
 const currency = z.string().regex(/^[A-Z]{3}$/, 'Use a 3-letter currency code such as USD');
 
 export const createBillsSchema = z
@@ -36,6 +37,9 @@ export const updateBillSchema = z
     dueDays: z.number().int().min(0).max(180).optional(),
     vendorReference: z.string().trim().max(80).nullable().optional(),
     paymentReference: z.string().trim().max(120).nullable().optional(),
+    /** How and when it was paid, recorded with PAID (feedback 2026-11-23). paidOn defaults to today. */
+    paymentMode: z.enum(PAYMENT_MODES).optional(),
+    paidOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD').optional(),
     notes: z.string().max(1000).nullable().optional(),
   })
   .merge(taxSchema)
@@ -180,6 +184,88 @@ export class PayablesService {
     return { vendors: list, totals: { unbilled: total('unbilled'), draft: total('draft'), due: total('due'), paid: total('paid'), pending: total('pending') } };
   }
 
+  /**
+   * One vendor's account (feedback 2026-11-23): its projects with completes, what is billed and what
+   * is not yet, its bills with how and when they were paid, and the totals pending, paid and unbilled.
+   * `vendorView` leaves out drafts and voided bills (the vendor portal).
+   */
+  async statement(org: string, vendorId: string, vendorView = false) {
+    const vendor = await this.prisma.vendor.findFirst({ where: { id: vendorId, organizationId: org }, select: { id: true, name: true, code: true, portalHidePayout: true } });
+    if (!vendor) throw new NotFoundException('Vendor not found');
+    const hide = vendorView && vendor.portalHidePayout;
+    const sessions = await this.prisma.respondentSession.groupBy({
+      by: ['projectId', 'projectCountryId', 'approval', 'vendorBillId'],
+      where: { organizationId: org, isTest: false, status: 'COMPLETE', vendorAllocation: { vendorId } },
+      _count: { _all: true },
+      _sum: { payout: true },
+    });
+    const projects = await this.prisma.project.findMany({ where: { organizationId: org, id: { in: [...new Set(sessions.map((x) => x.projectId))] } }, select: { id: true, projectCode: true, workOrderNo: true, name: true, vendorTitle: true, status: true } });
+    const P = new Map(projects.map((p) => [p.id, p]));
+    const cur = await currencyOf(this.prisma, sessions.map((g) => g.projectCountryId));
+    const bills = await this.prisma.vendorBill.findMany({
+      where: { organizationId: org, vendorId, ...(vendorView ? { status: { in: ['APPROVED', 'PAID'] as VendorBillStatus[] } } : {}) },
+      orderBy: { createdAt: 'desc' },
+      take: 500,
+    });
+    const B = new Map(bills.map((b) => [b.id, b]));
+    type Row = { project: { id: string; projectCode: string; name: string; status: string }; currency: string; completes: number; approved: number; pending: number; rejected: number; unbilled: number; unbilledAmount: number; billed: number; billedAmount: number; paid: number; paidAmount: number; bills: Set<string> };
+    const rows = new Map<string, Row>();
+    for (const g of sessions) {
+      const p = P.get(g.projectId);
+      const currency = cur.get(g.projectCountryId);
+      if (!p || !currency) continue;
+      const k = `${p.id}:${currency}`;
+      const r = rows.get(k) ?? { project: { id: p.id, projectCode: p.projectCode, name: vendorView ? p.vendorTitle?.trim() || `Survey ${p.workOrderNo ? `${p.workOrderNo} · ` : ''}${p.projectCode}` : p.name, status: p.status }, currency, completes: 0, approved: 0, pending: 0, rejected: 0, unbilled: 0, unbilledAmount: 0, billed: 0, billedAmount: 0, paid: 0, paidAmount: 0, bills: new Set<string>() };
+      const n = g._count._all;
+      const amount = Number(g._sum.payout ?? 0);
+      r.completes += n;
+      if (g.approval === 'APPROVED') r.approved += n;
+      else if (g.approval === 'REJECTED') r.rejected += n;
+      else r.pending += n;
+      const bill = g.vendorBillId ? B.get(g.vendorBillId) : undefined;
+      if (g.approval === 'APPROVED' && !g.vendorBillId) {
+        r.unbilled += n;
+        r.unbilledAmount = money(r.unbilledAmount + amount);
+      } else if (bill) {
+        r.bills.add(bill.number);
+        if (bill.status === 'PAID') {
+          r.paid += n;
+          r.paidAmount = money(r.paidAmount + amount);
+        } else {
+          r.billed += n;
+          r.billedAmount = money(r.billedAmount + amount);
+        }
+      }
+      rows.set(k, r);
+    }
+    const sum = (list: { currency: string; amount: number }[]) => {
+      const by = new Map<string, number>();
+      for (const x of list) if (x.amount) by.set(x.currency, money((by.get(x.currency) ?? 0) + x.amount));
+      return [...by].map(([currency, amount]) => ({ currency, amount }));
+    };
+    const projectRows = [...rows.values()].sort((a, b) => b.project.projectCode.localeCompare(a.project.projectCode)).map((r) => ({
+      ...r,
+      bills: [...r.bills],
+      ...(hide ? { unbilledAmount: null, billedAmount: null, paidAmount: null } : {}),
+      state: r.completes === r.rejected ? 'rejected' : r.unbilled || r.pending ? 'not billed' : r.billed ? 'billed' : r.paid ? 'paid' : 'not billed',
+    }));
+    const billRows = bills.map((b) => ({ ...shape(b), overdue: b.status === 'APPROVED' && !!b.dueAt && b.dueAt.getTime() < Date.now() }));
+    return {
+      vendor: { id: vendor.id, name: vendor.name, code: vendor.code },
+      hidePayout: hide,
+      projects: projectRows,
+      bills: hide ? billRows.map((b) => ({ ...b, subtotal: null, taxAmount: null, total: null, lines: [] })) : billRows,
+      totals: hide
+        ? null
+        : {
+            unbilled: sum([...rows.values()].map((r) => ({ currency: r.currency, amount: r.unbilledAmount }))),
+            pendingInvoices: sum(bills.filter((b) => b.status === 'APPROVED' || b.status === 'DRAFT').map((b) => ({ currency: b.currency, amount: Number(b.total) }))),
+            paidInvoices: sum(bills.filter((b) => b.status === 'PAID').map((b) => ({ currency: b.currency, amount: Number(b.total) }))),
+          },
+      counts: { projects: projectRows.length, completedProjects: projectRows.filter((r) => ['CLOSED', 'INVOICED'].includes(r.project.status)).length, billedProjects: projectRows.filter((r) => r.bills.length).length, pendingBills: bills.filter((b) => b.status === 'APPROVED').length, paidBills: bills.filter((b) => b.status === 'PAID').length },
+    };
+  }
+
   async createBills(u: AuthUser, body: z.infer<typeof createBillsSchema>) {
     if (body.vendorId && !(await this.prisma.vendor.count({ where: { id: body.vendorId, organizationId: u.organizationId } }))) throw new NotFoundException('Vendor not found');
     const upTo = body.upTo ? new Date(`${body.upTo}T23:59:59.999Z`) : null;
@@ -282,7 +368,9 @@ export class PayablesService {
     if (draftOnly && bill.status !== 'DRAFT') throw new BadRequestException('Notes and tax can only be changed on a draft');
     if (body.status && !NEXT[bill.status].includes(body.status)) throw new BadRequestException(`A ${bill.status.toLowerCase()} bill cannot be marked ${body.status.toLowerCase()}`);
     if (body.vendorReference !== undefined && !['DRAFT', 'APPROVED'].includes(bill.status) && body.status !== 'APPROVED') throw new BadRequestException('The vendor invoice number is set before payment');
-    if (body.paymentReference !== undefined && body.status !== 'PAID') throw new BadRequestException('A payment reference is recorded when the bill is paid');
+    if ((body.paymentReference !== undefined || body.paymentMode !== undefined || body.paidOn !== undefined) && body.status !== 'PAID') throw new BadRequestException('Payment details are recorded when the bill is paid');
+    const paidOn = body.paidOn ? new Date(`${body.paidOn}T12:00:00.000Z`) : null;
+    if (paidOn && paidOn.getTime() > Date.now() + 86_400_000) throw new BadRequestException('The payment date cannot be in the future');
     const tax = body.taxName !== undefined || body.taxPercent !== undefined
       ? { ...withTax(Number(bill.subtotal), body.taxPercent ?? Number(bill.taxPercent)), taxName: body.taxName !== undefined ? body.taxName || null : bill.taxName }
       : null;
@@ -297,7 +385,7 @@ export class PayablesService {
           ...(body.paymentReference !== undefined ? { paymentReference: body.paymentReference || null } : {}),
           ...(body.status ? { status: body.status } : {}),
           ...(body.status === 'APPROVED' ? { approvedAt: now, dueAt: new Date(now.getTime() + (body.dueDays ?? 30) * 86_400_000) } : {}),
-          ...(body.status === 'PAID' ? { paidAt: now } : {}),
+          ...(body.status === 'PAID' ? { paidAt: paidOn ?? now, paymentMode: body.paymentMode ?? null } : {}),
           ...(body.status === 'VOID' ? { voidedAt: now } : {}),
         },
       });
@@ -333,6 +421,7 @@ export function shape(r: BillRow) {
     total: Number(r.total),
     vendorReference: r.vendorReference,
     paymentReference: r.paymentReference,
+    paymentMode: r.paymentMode,
     notes: r.notes,
     approvedAt: r.approvedAt,
     dueAt: r.dueAt,

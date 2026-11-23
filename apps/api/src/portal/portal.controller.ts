@@ -12,6 +12,7 @@ import { EntitlementsService } from '../super-admin/entitlements';
  * - Portal users never pass the staff endpoints (the global guard defaults to staff roles).
  */
 import { forVendor } from '../common/vendor-safe';
+import { VendorProjectsController } from './vendor-projects';
 import { entryQuery } from '../projects/markets';
 import { BadRequestException, Body, Controller, ForbiddenException, Get, Module, NotFoundException, Param, Patch, Post, Query, Res } from '@nestjs/common';
 import { Response } from 'express';
@@ -69,6 +70,12 @@ export class VendorPortalController {
   @Get('bills')
   async bills(@CurrentUser() u: AuthUser) {
     return this.payables.list(u.organizationId, { vendorId: await this.vendorId(u), vendorView: true });
+  }
+
+  /** Its account: projects, billed and unbilled completes, approved and paid bills (feedback 2026-11-23). */
+  @Get('statement')
+  async statement(@CurrentUser() u: AuthUser) {
+    return this.payables.statement(u.organizationId, await this.vendorId(u), true);
   }
 
   @Get('bills/:id')
@@ -426,5 +433,5 @@ export class PortalUsersController {
   }
 }
 
-@Module({ imports: [FinanceModule, UniqueLinksModule], controllers: [VendorPortalController, ClientPortalController, PortalUsersController] })
+@Module({ imports: [FinanceModule, UniqueLinksModule], controllers: [VendorProjectsController, VendorPortalController, ClientPortalController, PortalUsersController] })
 export class PortalModule {}

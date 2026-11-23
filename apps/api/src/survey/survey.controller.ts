@@ -26,6 +26,18 @@ const s2sSchema = z.object({
 const GATE_COOKIE = 'pxg';
 const BROWSER_COOKIE = 'pxb';
 
+/**
+ * The long-lived browser cookie: read it, or set a new one on this response. Entry links set it so
+ * "one entry per browser and device" works even when the project has no gate page.
+ */
+function browserCookie(req: Request, res: Response): string {
+  const have = req.cookies?.[BROWSER_COOKIE];
+  if (typeof have === 'string' && have.length >= 16 && have.length <= 100) return have;
+  const id = randomBytes(18).toString('base64url');
+  res.cookie(BROWSER_COOKIE, id, { httpOnly: true, sameSite: 'lax', secure: appConfig.publicBaseUrl.startsWith('https://'), path: '/', maxAge: 365 * 86_400_000 });
+  return id;
+}
+
 /** Public respondent-facing endpoints (no login). Mounted outside the /api/v1 prefix. */
 @Controller()
 @Public()
@@ -35,7 +47,8 @@ export class SurveyPublicController {
   @Get('s/:code')
   async enter(@Param('code') code: string, @Query() query: Record<string, string>, @Req() req: Request, @Res() res: Response) {
     const geoHeader = appConfig.geoCountryHeader ? req.headers[appConfig.geoCountryHeader] : undefined;
-    const r = await this.survey.enter({ code, query, ip: req.ip, userAgent: req.headers['user-agent'], geoCountry: Array.isArray(geoHeader) ? geoHeader[0] : geoHeader });
+    const browserId = browserCookie(req, res);
+    const r = await this.survey.enter({ code, query, ip: req.ip, userAgent: req.headers['user-agent'], geoCountry: Array.isArray(geoHeader) ? geoHeader[0] : geoHeader, browserId });
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('Referrer-Policy', 'no-referrer');
     return res.redirect(302, r.location);
@@ -45,7 +58,8 @@ export class SurveyPublicController {
   @Get('u/:key')
   async enterUnique(@Param('key') key: string, @Query() query: Record<string, string>, @Req() req: Request, @Res() res: Response) {
     const geoHeader = appConfig.geoCountryHeader ? req.headers[appConfig.geoCountryHeader] : undefined;
-    const r = await this.survey.enterUnique({ key, query, ip: req.ip, userAgent: req.headers['user-agent'], geoCountry: Array.isArray(geoHeader) ? geoHeader[0] : geoHeader });
+    const browserId = browserCookie(req, res);
+    const r = await this.survey.enterUnique({ key, query, ip: req.ip, userAgent: req.headers['user-agent'], geoCountry: Array.isArray(geoHeader) ? geoHeader[0] : geoHeader, browserId });
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('Referrer-Policy', 'no-referrer');
     return res.redirect(302, r.location);

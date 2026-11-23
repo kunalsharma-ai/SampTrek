@@ -1,25 +1,24 @@
 import { hasFeature, type Features } from '@/lib/types';
-import { Briefcase, MessageCircle, CreditCard, Database, PieChart, Crown, Columns3, Activity, Route, MessagesSquare, ListChecks, ClipboardList, LifeBuoy, Sparkles, BarChart3, BookOpenCheck, Users, HandCoins, Building2, FolderKanban, FormInput, ReceiptText, KeyRound, LayoutDashboard, Palette, PlugZap, PlusCircle, Settings, ShieldCheck, Stamp, ToggleRight, Trophy, Truck, type LucideIcon } from 'lucide-react';
+import { Briefcase, MessageCircle, CreditCard, Database, PieChart, Crown, Columns3, Activity, Route, MessagesSquare, ListChecks, ClipboardList, LifeBuoy, Sparkles, BarChart3, BookOpenCheck, Users, HandCoins, Building2, FolderKanban, FormInput, Percent, ReceiptText, Trash2, KeyRound, LayoutDashboard, Palette, PlugZap, PlusCircle, Settings, ShieldCheck, Stamp, ToggleRight, Trophy, Truck, type LucideIcon } from 'lucide-react';
 
-export type NavGroup = 'Main' | 'Fieldwork' | 'Finance' | 'Workspace' | 'Admin';
+export type NavGroup = 'Main' | 'Fieldwork' | 'Reports' | 'Finance' | 'Workspace' | 'Admin';
 export interface NavItem { href: string; label: string; icon: LucideIcon; group: NavGroup; keywords?: string; editorsOnly?: boolean; adminOnly?: boolean; feature?: string; superAdminOnly?: boolean }
 
 /**
  * Sidebar sections, in order. "Main" follows the order people work in (Dashboard → Clients → Vendors → Projects → Reports)
  * and is shown without a heading; anyone can pin pages above it with the star (Favorites).
  */
-export const NAV_GROUPS: NavGroup[] = ['Main', 'Fieldwork', 'Finance', 'Workspace', 'Admin'];
+export const NAV_GROUPS: NavGroup[] = ['Main', 'Fieldwork', 'Reports', 'Finance', 'Workspace', 'Admin'];
 /** Headings shown in the sidebar; null hides the heading. */
-export const NAV_GROUP_LABEL: Record<NavGroup, string | null> = { Main: null, Fieldwork: 'Projects & fieldwork', Finance: 'Finance', Workspace: 'Work', Admin: 'Admin' };
+export const NAV_GROUP_LABEL: Record<NavGroup, string | null> = { Main: null, Fieldwork: 'Projects & fieldwork', Reports: 'Report', Finance: 'Finance', Workspace: 'Work', Admin: 'Admin' };
 /** Icon of each main menu; its pages open under it as a sub menu (feedback 2026-11-18). */
-export const NAV_GROUP_ICON: Record<NavGroup, LucideIcon> = { Main: LayoutDashboard, Fieldwork: FolderKanban, Finance: ReceiptText, Workspace: Briefcase, Admin: Settings };
+export const NAV_GROUP_ICON: Record<NavGroup, LucideIcon> = { Main: LayoutDashboard, Fieldwork: FolderKanban, Reports: BarChart3, Finance: ReceiptText, Workspace: Briefcase, Admin: Settings };
 
 export const NAV: NavItem[] = [
   { href: '/', label: 'Dashboard', icon: LayoutDashboard, group: 'Main', keywords: 'dashboard home command center overview', feature: 'dashboard' },
   { href: '/clients', label: 'Clients', icon: Building2, group: 'Main', feature: 'clients' },
   { href: '/vendors', label: 'Vendors', icon: Truck, group: 'Main', keywords: 'panels suppliers', feature: 'vendors' },
   { href: '/projects', label: 'Projects', icon: FolderKanban, group: 'Main', keywords: 'manage projects list', feature: 'projects' },
-  { href: '/reports', label: 'Reports', icon: BarChart3, group: 'Main', keywords: 'overall conversion client vendor clicks', feature: 'reports' },
   { href: '/projects/new', label: 'Create project', icon: PlusCircle, group: 'Fieldwork', keywords: 'new project wizard', editorsOnly: true, feature: 'projects.create' },
   { href: '/projects/board', label: 'Project board', icon: Columns3, group: 'Fieldwork', keywords: 'kanban gantt timeline stages pipeline board', feature: 'projects' },
   { href: '/won-bids', label: 'Won bids', icon: Trophy, group: 'Fieldwork', keywords: 'sampbidx bidzo awarded setup project', feature: 'won_bids' },
@@ -27,9 +26,16 @@ export const NAV: NavItem[] = [
   { href: '/redirect-health', label: 'Redirect health', icon: Route, group: 'Fieldwork', keywords: 'redirects fallback callbacks survey links broken latency errors health', feature: 'redirect_health' },
   { href: '/data-processing', label: 'Data processing', icon: Database, group: 'Fieldwork', keywords: 'data quality cleaning validation pipeline speeders duplicates clean data export reconciliation quota balance', feature: 'data_processing' },
   { href: '/analytics', label: 'Analytics', icon: PieChart, group: 'Fieldwork', keywords: 'crosstab cross tab charts insights results answers analysis deliverables dashboard', feature: 'analytics' },
+  // REPORT menu with four reports (feedback 2026-11-23); the older report views stay at /reports.
+  { href: '/reports/overall', label: 'Overall report', icon: BarChart3, group: 'Reports', keywords: 'reports overall all projects clients vendors financial statistics observation date range', feature: 'reports' },
+  { href: '/reports/client', label: 'Client report', icon: Building2, group: 'Reports', keywords: 'reports client finance observation', feature: 'reports' },
+  { href: '/reports/vendor', label: 'Vendor report', icon: Truck, group: 'Reports', keywords: 'reports vendor panel supplier', feature: 'reports' },
+  { href: '/reports/conversion', label: 'Conversion report', icon: Percent, group: 'Reports', keywords: 'reports conversion respondents completes approve reject telemetry gate timeline download excel csv', feature: 'reports' },
   { href: '/invoices', label: 'Invoices', icon: ReceiptText, group: 'Finance', keywords: 'billing reconciliation payment finance', feature: 'invoices' },
   { href: '/payables', label: 'Vendor payables', icon: HandCoins, group: 'Finance', keywords: 'bills vendor payments owed finance', feature: 'payables' },
-  { href: '/accounting', label: 'Accounting exports', icon: BookOpenCheck, group: 'Finance', keywords: 'zoho books tally quickbooks xero export finance ledger', editorsOnly: true, feature: 'accounting' },
+  { href: '/projects/recycle-bin', label: 'Recycle bin', icon: Trash2, group: 'Fieldwork', keywords: 'deleted projects restore delete requests trash bin', editorsOnly: true, feature: 'projects' },
+  // Finance has two sub menus: client invoices and vendor payables (feedback 2026-11-23). Exports moved to Admin.
+  { href: '/accounting', label: 'Accounting exports', icon: BookOpenCheck, group: 'Admin', keywords: 'zoho books tally quickbooks xero export finance ledger', editorsOnly: true, feature: 'accounting' },
   { href: '/tasks', label: 'Tasks', icon: ListChecks, group: 'Workspace', keywords: 'to do todo reminders assigned overdue', feature: 'tasks' },
   { href: '/chat', label: 'Team chat', icon: MessageCircle, group: 'Workspace', keywords: 'chat message messages talk team internal announcements dm direct group project room updates offline', feature: 'chat' },
   { href: '/requests', label: 'Requests', icon: MessagesSquare, group: 'Workspace', keywords: 'tickets support client vendor portal disputes questions issues', feature: 'requests' },
@@ -51,7 +57,7 @@ export const NAV: NavItem[] = [
 
 export function isActive(pathname: string, href: string) {
   if (href === '/') return pathname === '/';
-  if (href === '/projects') return pathname === '/projects' || (pathname.startsWith('/projects/') && !pathname.startsWith('/projects/new') && !pathname.startsWith('/projects/board'));
+  if (href === '/projects') return pathname === '/projects' || (pathname.startsWith('/projects/') && !pathname.startsWith('/projects/new') && !pathname.startsWith('/projects/board') && !pathname.startsWith('/projects/recycle-bin'));
   if (href === '/settings') return pathname === '/settings';
   return pathname === href || pathname.startsWith(`${href}/`);
 }

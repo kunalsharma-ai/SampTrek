@@ -181,7 +181,7 @@ export class PasswordController {
 const roleEnum = z.enum(['ADMIN', 'PROJECT_MANAGER', 'SALES', 'VIEWER']);
 const inviteSchema = z.object({ email: z.string().trim().email().transform((s) => s.toLowerCase()), name: z.string().trim().min(1).max(120), role: roleEnum }).strict();
 const updateSchema = z
-  .object({ name: z.string().trim().min(1).max(120).optional(), role: roleEnum.optional(), active: z.boolean().optional() })
+  .object({ name: z.string().trim().min(1).max(120).optional(), role: roleEnum.optional(), active: z.boolean().optional(), canDeleteProjects: z.boolean().optional() })
   .strict()
   .refine((b) => Object.values(b).some((v) => v !== undefined), { message: 'Nothing to change' });
 
@@ -206,7 +206,7 @@ export class TeamController {
     return {
       emailConfigured: (await this.mail.status(u.organizationId)).configured,
       users: users.map((x) => ({
-        id: x.id, name: x.name, email: x.email, role: x.role, active: x.active,
+        id: x.id, name: x.name, email: x.email, role: x.role, active: x.active, canDeleteProjects: x.role === 'ADMIN' || x.canDeleteProjects,
         status: !x.active ? 'deactivated' : x.passwordSetAt || x.ssoIdentities.length ? 'active' : 'invited',
         inviteExpiresAt: x.passwordTokens[0]?.expiresAt ?? null,
         lastLoginAt: x.lastLoginAt, mfaEnabled: !!x.mfaEnabledAt, sso: [...new Set(x.ssoIdentities.map((i) => i.provider))], createdAt: x.createdAt, isYou: x.id === u.id,

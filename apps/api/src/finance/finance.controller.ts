@@ -100,6 +100,12 @@ export class PayablesController {
     return this.payables.summary(u.organizationId);
   }
 
+  /** One vendor's account: projects, billed and unbilled completes, bills and payments (feedback 2026-11-23). */
+  @Get('payables/vendors/:vendorId')
+  statement(@CurrentUser() u: AuthUser, @Param('vendorId') vendorId: string) {
+    return this.payables.statement(u.organizationId, vendorId);
+  }
+
   @Post('payables/bills')
   @Roles(...EDITORS)
   create(@CurrentUser() u: AuthUser, @Body(new ZodPipe(createBillsSchema)) body: z.infer<typeof createBillsSchema>) {

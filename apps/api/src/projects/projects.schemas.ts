@@ -25,6 +25,9 @@ export const SECURITY_KEYS = [
   // One open (unfinished) live session per IP per project: blocks extra tabs. On unless switched off
   // (feedback 2026-11-18: with every check off, a tester could not get back in after one run).
   'oneOpenPerIp',
+  // One entry per browser and device (feedback 2026-11-23): the same browser, or another browser on
+  // the same device and network, cannot enter the project a second time with any respondent ID.
+  'oneEntryPerBrowser',
 ] as const;
 
 /** Switches that are on when a project never set them (older projects have no value stored). */
@@ -153,6 +156,8 @@ export const updateProjectSchema = z.object({
   /** Fixes a project created under the wrong client. The contact is cleared unless one of the new client's is given. */
   clientId: z.string().min(1).optional(),
   description: z.string().max(20000).nullable().optional(),
+  /** Quota and terminate notes from the client, pasted as text; Excel rows keep their tabs (feedback 2026-11-23). */
+  quotaNotes: z.string().max(50000).nullable().optional(),
   clientContactId: z.string().nullable().optional(),
   salesPersonId: z.string().nullable().optional(),
   projectManagerId: z.string().optional(),

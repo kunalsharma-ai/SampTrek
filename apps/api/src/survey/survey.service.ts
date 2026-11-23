@@ -166,6 +166,8 @@ export interface EntryRequest {
   userAgent?: string;
   /** Value of the configured geolocation header, if any. */
   geoCountry?: string;
+  /** The long-lived browser cookie (set on the first entry), for "one entry per browser". */
+  browserId?: string;
 }
 
 @Injectable()
@@ -223,7 +225,7 @@ export class SurveyService {
    * Any later visit is sent to the Duplicate page. Links opened while the project, market or
    * vendor is not live are not used up. See docs/UNIQUE_LINKS.md.
    */
-  async enterUnique(req: { key: string; query: Record<string, string | undefined>; ip?: string; userAgent?: string; geoCountry?: string }): Promise<{ location: string }> {
+  async enterUnique(req: { key: string; query: Record<string, string | undefined>; ip?: string; userAgent?: string; geoCountry?: string; browserId?: string }): Promise<{ location: string }> {
     const base = appConfig.publicBaseUrl;
     if (!UNIQUE_KEY_RE.test(req.key)) return { location: internalEndPage(base, 'SECURITY_REJECT') };
     const link = await this.prisma.uniqueLink.findUnique({
@@ -243,7 +245,7 @@ export class SurveyService {
     const allocation = link.vendorAllocation;
     const country = allocation.projectCountry;
     const project = country.project;
-    if (!(project.status === 'LIVE' && country.status === 'LIVE' && allocation.status === 'ACTIVE')) {
+    if (project.deletedAt || !(project.status === 'LIVE' && country.status === 'LIVE' && allocation.status === 'ACTIVE')) {
       // Not open yet (or paused): keep the link so the respondent can come back later.
       return { location: internalEndPage(base, 'QUOTA_FULL') };
     }
@@ -260,13 +262,15 @@ export class SurveyService {
   /** Shared entry logic for vendor links and unique links: checks, session creation, first redirect. */
   private async admit(
     allocation: AllocationWithContext,
-    opts: { isTest: boolean; uid: string; req: { ip?: string; userAgent?: string; geoCountry?: string; query: Record<string, string | undefined> }; uniqueLinkId?: string },
+    opts: { isTest: boolean; uid: string; req: { ip?: string; userAgent?: string; geoCountry?: string; browserId?: string; query: Record<string, string | undefined> }; uniqueLinkId?: string },
   ): Promise<{ location: string; httpStatus?: number }> {
     const { isTest, uid, req } = opts;
     const country = allocation.projectCountry;
     const project = country.project;
 
     const ipHash = req.ip ? sha256(`${project.organizationId}:${req.ip}`) : null;
+    // Same hash as the gate page uses for the browser cookie, so both checks see the same browser.
+    const browserIdHash = req.browserId && req.browserId.length <= 100 ? sha256(`${project.organizationId}:${req.browserId}`) : null;
     const fraudOn = await this.fraudChecksOn(project.organizationId);
     const security = withFraudChecks(effectiveSecurity(project.security, allocation.vendor.securityOverrides, allocation.securityOverrides), fraudOn);
     const checks: CheckResult[] = [];
@@ -297,8 +301,10 @@ export class SurveyService {
     }
 
     let initial: { status: RespondentStatus; detail?: string } | null = null;
-    const live = project.status === 'LIVE' && country.status === 'LIVE' && allocation.status === 'ACTIVE';
-    const testable = ['DRAFT', 'TEST', 'LIVE'].includes(project.status) && allocation.status !== 'CLOSED';
+    // A project in the recycle bin takes nobody, live or test (feedback 2026-11-23).
+    const binned = !!project.deletedAt;
+    const live = !binned && project.status === 'LIVE' && country.status === 'LIVE' && allocation.status === 'ACTIVE';
+    const testable = !binned && ['DRAFT', 'TEST', 'LIVE'].includes(project.status) && allocation.status !== 'CLOSED';
     if (isTest ? !testable : !live) initial = { status: 'QUOTA_FULL', detail: 'NOT_LIVE' };
     else if (!isTest && (country.completes >= country.targetCompletes || allocation.completes >= allocation.targetCompletes)) {
       initial = { status: 'QUOTA_FULL', detail: 'QUOTA_CLOSED' };
@@ -338,6 +344,22 @@ export class SurveyService {
         select: { id: true, vendorAllocation: { select: { vendorId: true } } },
       });
       checks.push(open ? duplicateOf('sameIpOpen', 'SAME_IP_OPEN', open.vendorAllocation.vendorId !== allocation.vendorId) : { check: 'sameIpOpen', ok: true });
+    }
+    // One entry per browser and device (feedback 2026-11-23): this browser (its cookie) entered the
+    // project before with any ID, or another browser on the same device and network did (same IP,
+    // same kind of device and operating system, a different browser).
+    if (security.oneEntryPerBrowser) {
+      const before = browserIdHash
+        ? await this.prisma.respondentSession.findFirst({ where: { projectId: project.id, isTest: false, browserIdHash }, select: { vendorAllocation: { select: { vendorId: true } } }, orderBy: { startedAt: 'asc' } })
+        : null;
+      if (before) checks.push(duplicateOf('oneBrowser', 'SAME_BROWSER_ENTRY', before.vendorAllocation.vendorId !== allocation.vendorId));
+      else if (ipHash) {
+        const kind = deviceType(req.userAgent);
+        const os = deviceOs(req.userAgent);
+        const near = await this.prisma.respondentSession.findMany({ where: { projectId: project.id, isTest: false, ipHash, deviceType: kind }, select: { userAgent: true, vendorAllocation: { select: { vendorId: true } } }, take: 50 });
+        const other = near.find((s) => deviceOs(s.userAgent ?? undefined) === os);
+        checks.push(other ? duplicateOf('oneBrowser', 'SAME_DEVICE_OTHER_BROWSER', other.vendorAllocation.vendorId !== allocation.vendorId) : { check: 'oneBrowser', ok: true });
+      } else checks.push({ check: 'oneBrowser', ok: true, note: 'no browser id or IP' });
     }
     // Fraud risk from the entry checks; with no gate page, the threshold is applied here.
     const rules = fraudOn ? fraudRulesOf(project.fraudRules) : { ...fraudRulesOf(null), riskThreshold: null };
@@ -383,6 +405,7 @@ export class SurveyService {
           outcomeAt: initial ? new Date() : null,
           redirectVersionId: project.activeRedirectVersionId,
           ipHash,
+          browserIdHash,
           userAgent: req.userAgent?.slice(0, 500),
           deviceType: device.note,
           riskScore: checks.length > 1 || entryRisk.score ? entryRisk.score : null,
@@ -751,7 +774,7 @@ export class SurveyService {
     const enforced = !session.isTest;
     const answers = gate || pre ? ({ ...(gate ? { gate: gate.answers } : {}), ...(pre ? { prescreen: pre.answers } : {}) } as Prisma.InputJsonValue) : undefined;
     const agreed = consent && body.consent === true ? { consentAt: new Date(), consentVersion: consent.version } : {};
-    await this.prisma.respondentSession.update({ where: { id: session.id }, data: { fingerprintHash: fingerprint, deviceHash, browserIdHash: browserId, riskScore: risk.score, riskSignals: risk.signals, answers, quotaCellIds: cells.matched.map((c) => c.id), ...agreed } });
+    await this.prisma.respondentSession.update({ where: { id: session.id }, data: { fingerprintHash: fingerprint, deviceHash, browserIdHash: browserId ?? session.browserIdHash, riskScore: risk.score, riskSignals: risk.signals, answers, quotaCellIds: cells.matched.map((c) => c.id), ...agreed } });
     await this.event(session.id, 'SECURITY_CHECK', null, 'ENTRY', `checks:gate:${session.id}:${randomToken(4)}`, { stage: 'gate', enforced, checks });
 
     const failed = checks.find((c) => !c.ok);

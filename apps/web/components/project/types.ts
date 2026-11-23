@@ -60,6 +60,11 @@ export interface ProjectDetail {
   status: string;
   category: string;
   description: string | null;
+  /** Pasted client quota / termination report; vendors see it (feedback 2026-11-23). */
+  quotaNotes?: string | null;
+  quotaNotesUpdatedAt?: string | null;
+  /** Someone without the delete permission asked the admins to delete it. */
+  deleteRequestedAt?: string | null;
   redirectMode: 'STATIC' | 'DYNAMIC' | 'HYBRID';
   client: { id: string; name: string; code?: string; status?: string; website?: string | null; logoUrl?: string | null; contacts?: { id: string; name: string; email: string | null; phone: string | null }[] };
   clientContact?: { id: string; name: string; email: string | null; phone: string | null } | null;

@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
 import { canEdit, useMe } from '@/components/me';
+import { Pager, pageOf } from '@/components/pager';
 import { FilesPanel } from '@/components/requests/files-panel';
 import { Empty, ErrorBox, Loading, PageHeader, Section, StatusChip } from '@/components/ui';
 import { LogoUpload, PartyLogo } from '@/components/parties/logo';
@@ -34,6 +35,8 @@ export default function VendorScorecard() {
   const [detail, setDetail] = useState<VendorDetail | null>(null);
   const [editing, setEditing] = useState(false);
   const [codes, setCodes] = useState<string[]>([]);
+  const [linkPage, setLinkPage] = useState(1);
+  const [linkSize, setLinkSize] = useState(10);
 
   const load = useCallback(() => get<Card>(`/vendors/${id}/scorecard?days=${days}`).then(setCard).catch(setError), [id, days]);
   const loadDetail = useCallback(() => get<VendorDetail>(`/vendors/${id}`).then(setDetail).catch(setError), [id]);
@@ -99,7 +102,7 @@ export default function VendorScorecard() {
         actions={
           <label className="flex items-center gap-2 text-sm text-muted">
             Period
-            <select className="input w-auto py-1.5" value={days} onChange={(e) => setDays(Number(e.target.value))}>
+            <select className="input w-auto py-1.5" value={days} onChange={(e) => { setDays(Number(e.target.value)); setLinkPage(1); }}>
               {PERIODS.map((d) => <option key={d} value={d}>Last {d} days</option>)}
             </select>
           </label>
@@ -159,6 +162,25 @@ export default function VendorScorecard() {
                 ] as const).map(([l, v]) => (
                   <div key={l}><dt className="text-xs text-muted">{l}</dt><dd className="mt-0.5 break-words">{v || <span className="text-muted">Not set</span>}</dd></div>
                 ))}
+              </dl>
+              {/* Shown without opening Edit (feedback 2026-11-23). */}
+              <dl className="grid gap-3 rounded-lg bg-sunken/60 p-3 text-sm sm:grid-cols-2 lg:grid-cols-4" aria-label="Project settings for this vendor">
+                <div>
+                  <dt className="text-xs text-muted">Payout share (% of client CPI)</dt>
+                  <dd className="mt-0.5 font-medium tabular-nums">{detail.payoutSharePercent != null ? `${detail.payoutSharePercent}%` : <span className="font-normal text-muted">Not set</span>}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-muted">Auto assign to new projects</dt>
+                  <dd className="mt-0.5">{detail.autoAssign ? <span className="chip bg-ok/10 text-ok">On</span> : <span className="chip bg-sunken text-muted">Off</span>}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-muted">Link variable</dt>
+                  <dd className="mt-0.5"><code className="rounded bg-panel px-1.5 py-0.5 text-xs">?{detail.uidParam || 'vid'}=</code>{!detail.uidParam && <span className="ml-1 text-xs text-muted">(default)</span>}{detail.uidMacro && <span className="ml-1 text-xs text-muted">fills {detail.uidMacro}</span>}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-muted">Hide CPI and payout in vendor login</dt>
+                  <dd className="mt-0.5">{detail.portalHidePayout ? <span className="chip bg-warn/10 text-warn">Hidden</span> : <span className="chip bg-sunken text-muted">Shown</span>}</dd>
+                </div>
               </dl>
               <div className="-mx-5 -mb-5 overflow-x-auto">
                 <table className="w-full min-w-[640px]">
@@ -256,7 +278,7 @@ export default function VendorScorecard() {
             <table className="w-full min-w-[760px]">
               <thead className="border-y border-line bg-sunken/60"><tr><th className="th">Project</th><th className="th">Market</th><th className="th">Status</th><th className="th text-right">CPI</th><th className="th text-right">Completes</th><th className="th text-right">Clicks</th><th className="th text-right">Quality rejects</th><th className="th text-right">Client rejections</th></tr></thead>
               <tbody className="divide-y divide-line">
-                {card.links.map((l) => (
+                {pageOf(card.links, linkPage, linkSize).map((l) => (
                   <tr key={l.id}>
                     <td className="td"><Link className="font-medium hover:text-brand hover:underline" href={`/projects/${l.project.id}`}>{l.project.projectCode}</Link> <span className="text-muted">{l.project.name}</span></td>
                     <td className="td">{flag(l.countryCode)} {l.countryCode}</td>
@@ -270,6 +292,7 @@ export default function VendorScorecard() {
                 ))}
               </tbody>
             </table>
+            <Pager page={linkPage} pageSize={linkSize} total={card.links.length} onPage={setLinkPage} onPageSize={setLinkSize} noun="links" />
           </div>
         )}
       </Section>
