@@ -73,10 +73,10 @@ export const TOUR_STEPS: TourStep[] = [
   },
   {
     id: 'reports',
-    target: 'nav:/reports',
+    target: 'nav:/reports/overall',
     title: 'Reports',
-    body: 'Overall, conversion, client, vendor and clicks reports, with filters you can save and share.',
-    points: ['Export to CSV or PDF', 'Schedule reports by email'],
+    body: 'The Report menu has four reports: overall, client, vendor and conversion. Pick dates, filters and columns, then run.',
+    points: ['Download Excel or CSV', 'Approve or reject completes in the conversion report'],
   },
   {
     id: 'finance',

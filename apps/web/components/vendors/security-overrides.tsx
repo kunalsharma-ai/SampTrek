@@ -1,6 +1,7 @@
 'use client';
 import clsx from 'clsx';
 import { RotateCcw } from 'lucide-react';
+import { InfoTip } from '@/components/help';
 import { SECURITY_LABELS } from '@/lib/types';
 
 /** Switch → true (on), false (off). Missing switches follow the project. "deviceLimits" covers devices and systems. */
@@ -8,7 +9,7 @@ export type SecurityOverrides = Record<string, boolean>;
 
 export const OVERRIDE_LABELS: Record<string, string> = { ...SECURITY_LABELS, deviceLimits: 'Device and system limits' };
 /** The switches people change per vendor most often come first. */
-const ORDER = ['deviceLimits', 'duplicateDetection', 'oneOpenPerIp', 'gateSurvey', 'captcha', 'prescreening', 'browserFingerprinting', 'cookieValidation', 'crossProjectDuplicates', 'geolocation', 'timezoneTracking', 'browserLanguage', 'torDetection', 'proxyDetection', 'automationDetection', 'urlProtection'];
+const ORDER = ['deviceLimits', 'duplicateDetection', 'oneOpenPerIp', 'oneEntryPerBrowser', 'gateSurvey', 'captcha', 'prescreening', 'browserFingerprinting', 'cookieValidation', 'crossProjectDuplicates', 'geolocation', 'timezoneTracking', 'browserLanguage', 'torDetection', 'proxyDetection', 'automationDetection', 'urlProtection'];
 export const OVERRIDE_KEYS = [...ORDER, ...Object.keys(SECURITY_LABELS).filter((k) => !ORDER.includes(k))];
 
 export function describeOverrides(o: SecurityOverrides | null | undefined): string {
@@ -69,7 +70,7 @@ export function SecurityOverridesEditor({ value, onChange, disabled, base = 'the
         return (
           <div key={k} className="flex items-center justify-between gap-3 text-sm">
             <span className="min-w-0">
-              <span className={clsx(v !== undefined && 'font-medium')}>{name}</span>
+              <span className={clsx('inline-flex items-center gap-1', v !== undefined && 'font-medium')}>{name}<InfoTip id={`check:${k}`} label={name} /></span>
               <span className="block text-[11px] text-muted">
                 {v === undefined ? (projectValues ? `As ${base} (${follow ? 'on' : 'off'})` : `Follows ${base}`) : `Set for this vendor`}
                 {v !== undefined && !disabled && (

@@ -4,10 +4,13 @@ import { BillStatus } from '@/components/finance/bill-status';
 import { TotalsFoot } from '@/components/finance/totals';
 import { flag } from '@/lib/countries';
 
+/** How a vendor bill was paid (feedback 2026-11-23). */
+export const PAYMENT_MODES: Record<string, string> = { BANK_TRANSFER: 'Bank transfer', PAYPAL: 'PayPal', WISE: 'Wise', UPI: 'UPI', CHEQUE: 'Cheque', CASH: 'Cash', CARD: 'Card', OTHER: 'Other' };
+
 export interface Bill {
   id: string; number: string; status: 'DRAFT' | 'APPROVED' | 'PAID' | 'VOID'; currency: string; completes: number; notes: string | null;
   subtotal: number; taxName: string | null; taxPercent: number; taxAmount: number; total: number;
-  vendorReference: string | null; paymentReference: string | null; periodTo: string | null;
+  vendorReference: string | null; paymentReference: string | null; paymentMode?: string | null; periodTo: string | null;
   createdAt: string; approvedAt: string | null; dueAt: string | null; paidAt: string | null; voidedAt: string | null; overdue: boolean; payer: string;
   lines: { projectCode: string; countryCode: string; description: string; quantity: number; unitPrice: number; amount: number }[];
   vendor: { id: string; name: string; code: string };
@@ -48,6 +51,7 @@ export function BillDocument({ bill, children }: { bill: Bill; children?: ReactN
           <div className="flex justify-between gap-3"><dt className="text-muted">Approved</dt><dd>{bill.approvedAt ? date(bill.approvedAt) : 'Not yet'}</dd></div>
           <div className="flex justify-between gap-3"><dt className="text-muted">Due</dt><dd className={bill.overdue ? 'font-medium text-bad' : ''}>{date(bill.dueAt)}</dd></div>
           {bill.paidAt && <div className="flex justify-between gap-3"><dt className="text-muted">Paid</dt><dd>{date(bill.paidAt)}</dd></div>}
+          {bill.paymentMode && <div className="flex justify-between gap-3"><dt className="text-muted">Paid by</dt><dd>{PAYMENT_MODES[bill.paymentMode] ?? bill.paymentMode}</dd></div>}
           {bill.paymentReference && <div className="flex justify-between gap-3"><dt className="text-muted">Payment ref.</dt><dd className="font-mono text-xs">{bill.paymentReference}</dd></div>}
           {bill.voidedAt && <div className="flex justify-between gap-3"><dt className="text-muted">Voided</dt><dd>{date(bill.voidedAt)}</dd></div>}
         </dl>

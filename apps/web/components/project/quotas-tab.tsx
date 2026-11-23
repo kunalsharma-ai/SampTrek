@@ -1,4 +1,5 @@
 'use client';
+import { QuotaNotes } from './quota-notes';
 import clsx from 'clsx';
 import { AlertTriangle, Lock, LockOpen, Pencil, Plus, Trash2, Wand2, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -63,6 +64,7 @@ export function QuotasTab({ project, editable }: { project: ProjectDetail; edita
           <span>The gate survey and prescreener are off, so only device cells can match. Turn them on and add questions in Gate &amp; security to quota on answers.</span>
         </div>
       )}
+      <QuotaNotes project={project} editable={editable} />
       {(view.gateSurvey || view.prescreening) && answerSources === 0 && <p className="text-sm text-muted">No choice or number questions yet. Add them in Gate &amp; security to quota on answers.</p>}
       <ErrorBox error={error} />
       {view.countries.map((c) =>

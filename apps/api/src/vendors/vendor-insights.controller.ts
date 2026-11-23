@@ -136,7 +136,8 @@ export class VendorInsightsController {
       }),
       links: allocations
         .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
-        .slice(0, 25)
+        // Every link of the period; the page shows 10, 25 or 100 at a time (feedback 2026-11-23).
+        .slice(0, 5000)
         .map((a) => {
           const st = perAlloc.get(a.id) ?? emptyStats();
           return {

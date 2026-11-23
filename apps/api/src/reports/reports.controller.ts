@@ -11,6 +11,8 @@ import { z } from 'zod';
 import { CurrentUser } from '../auth/decorators';
 import { AuthUser } from '../auth/auth.types';
 import { ZodPipe } from '../common/zod.pipe';
+import { BUILDER_KINDS, BuilderInput, builderApprovalSchema, builderSchema, ReportBuilderService } from './report-builder';
+import { EDITORS, Roles } from '../auth/decorators';
 import { CURRENCY_NOTE, filterSchema, GROUPS, listSchema, ReportFilter, ReportsService } from './reports.service';
 
 const groupSchema = z.object({ groupBy: z.enum(GROUPS).default('client') });
@@ -175,5 +177,29 @@ export class ReportViewsController {
   }
 }
 
-@Module({ controllers: [ReportViewsController, ReportsController], providers: [ReportsService], exports: [ReportsService] })
+/** The Reports menu's report builder: Overall, Client, Vendor and Conversion (feedback 2026-11-23). */
+@Controller('reports/builder')
+export class ReportBuilderController {
+  constructor(private readonly builder: ReportBuilderService) {}
+
+  @Get('options')
+  options(@CurrentUser() u: AuthUser) {
+    return this.builder.options(u.organizationId);
+  }
+
+  /** Approve or reject completes picked in the conversion report. */
+  @Post('conversion/approval')
+  @Roles(...EDITORS)
+  approval(@CurrentUser() u: AuthUser, @Body(new ZodPipe(builderApprovalSchema)) body: z.infer<typeof builderApprovalSchema>) {
+    return this.builder.approval(u.organizationId, body);
+  }
+
+  @Post(':kind')
+  run(@CurrentUser() u: AuthUser, @Param('kind') kind: string, @Body(new ZodPipe(builderSchema)) body: BuilderInput) {
+    if (!(BUILDER_KINDS as readonly string[]).includes(kind)) throw new NotFoundException('Unknown report');
+    return kind === 'conversion' ? this.builder.conversion(u.organizationId, body) : this.builder.aggregated(u.organizationId, kind as 'overall' | 'client' | 'vendor', body);
+  }
+}
+
+@Module({ controllers: [ReportViewsController, ReportsController, ReportBuilderController], providers: [ReportsService, ReportBuilderService], exports: [ReportsService] })
 export class ReportsModule {}

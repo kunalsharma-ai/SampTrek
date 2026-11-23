@@ -334,11 +334,24 @@ export class RequestsService {
 
   // ─────────────────────────────── Files ───────────────────────────────
 
+  /**
+   * Files a party may see: its own, and for a vendor also the project documents shared with every
+   * vendor of a project it works on (vendorsAll, feedback 2026-11-23).
+   */
+  private async fileWhere(orgId: string, p: Party): Promise<Prisma.SharedFileWhereInput> {
+    if (p.kind !== 'vendor') return this.partyWhere(p);
+    const projects = await this.prisma.project.findMany({
+      where: { organizationId: orgId, status: { in: [...VISIBLE_PROJECT_STATUSES] }, countries: { some: { allocations: { some: { vendorId: p.vendorId } } } } },
+      select: { id: true },
+    });
+    return { OR: [{ vendorId: p.vendorId }, { vendorsAll: true, projectId: { in: projects.map((x) => x.id) } }] };
+  }
+
   async listFiles(orgId: string, p: Party, f: { projectId?: string; vendorId?: string; clientId?: string; kind?: SharedFileKind }, viewerId?: string) {
     const rows = await this.prisma.sharedFile.findMany({
       where: {
         organizationId: orgId,
-        ...this.partyWhere(p),
+        ...(await this.fileWhere(orgId, p)),
         ...(f.projectId ? { projectId: f.projectId } : {}),
         ...(p.kind === 'staff' && f.vendorId ? { vendorId: f.vendorId } : {}),
         ...(p.kind === 'staff' && f.clientId ? { clientId: f.clientId } : {}),
@@ -356,7 +369,7 @@ export class RequestsService {
     u: AuthUser,
     p: Party,
     file: { originalname: string; mimetype: string; size: number; buffer: Buffer } | undefined,
-    b: { kind?: SharedFileKind; projectId?: string; ticketId?: string; note?: string; expiresAt?: Date; clientId?: string; vendorId?: string },
+    b: { kind?: SharedFileKind; projectId?: string; ticketId?: string; note?: string; expiresAt?: Date; clientId?: string; vendorId?: string; vendorsAll?: boolean },
   ) {
     if (!file?.buffer?.length) throw new BadRequestException('Choose a file');
     if (file.size > MAX_FILE_BYTES || file.buffer.length > MAX_FILE_BYTES) throw new PayloadTooLargeException('Files can be up to 10 MB');
@@ -399,6 +412,9 @@ export class RequestsService {
       projectId = project.id;
     }
     if (b.expiresAt && kind !== 'COMPLIANCE') throw new BadRequestException('Only compliance documents have an expiry date');
+    const vendorsAll = p.kind === 'staff' && !!b.vendorsAll;
+    if (vendorsAll && (!projectId || clientId || vendorId || ticketId)) throw new BadRequestException('A file for every vendor belongs to a project and to no single client or vendor');
+    if (p.kind !== 'staff' && ['SCREENER', 'ZIP_CODES'].includes(kind)) throw new BadRequestException('Only your project team can share screeners and ZIP code lists');
 
     const created = await this.prisma.sharedFile.create({
       data: {
@@ -417,6 +433,7 @@ export class RequestsService {
         expiresAt: b.expiresAt ?? null,
         uploadedById: u.id,
         fromPortal: p.kind !== 'staff',
+        vendorsAll,
       },
       select: FILE_FIELDS,
     });
@@ -426,7 +443,7 @@ export class RequestsService {
   }
 
   async download(u: AuthUser, p: Party, id: string) {
-    const f = await this.prisma.sharedFile.findFirst({ where: { id, organizationId: u.organizationId, ...this.partyWhere(p) } });
+    const f = await this.prisma.sharedFile.findFirst({ where: { id, organizationId: u.organizationId, ...(await this.fileWhere(u.organizationId, p)) } });
     if (!f) throw new NotFoundException('File not found');
     await this.audit.record({ organizationId: u.organizationId, actorId: u.id, action: 'file.download', entityType: 'SharedFile', entityId: f.id, detail: { name: f.name } });
     return f;
@@ -468,6 +485,7 @@ const FILE_FIELDS = {
   ticketId: true,
   clientId: true,
   vendorId: true,
+  vendorsAll: true,
   project: { select: { id: true, projectCode: true } },
   client: { select: { id: true, name: true } },
   vendor: { select: { id: true, name: true } },
@@ -493,7 +511,8 @@ function fileView(f: FileRow, people: Map<string, string>, staff = true, viewerI
     project: f.project,
     ticketId: f.ticketId,
     // Who it is shared with; portals only ever see their own files, so this is staff-only.
-    sharedWith: staff ? (f.client ? { kind: 'client', ...f.client } : f.vendor ? { kind: 'vendor', ...f.vendor } : null) : undefined,
+    sharedWith: staff ? (f.client ? { kind: 'client', ...f.client } : f.vendor ? { kind: 'vendor', ...f.vendor } : f.vendorsAll ? { kind: 'vendors', id: 'all', name: 'Every vendor of the project' } : null) : undefined,
+    vendorsAll: f.vendorsAll,
   };
 }
 

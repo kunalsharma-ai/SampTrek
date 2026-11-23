@@ -43,6 +43,8 @@ const EMPTY_FORM = { vendorId: '', cpi: '', targetCompletes: '', uidParam: 'vid'
 export function VendorsTab({ project, editable, reload }: { project: ProjectDetail; editable: boolean; reload: () => void }) {
   const [vendors, setVendors] = useState<(PartyOpt & { payoutSharePercent?: number | null; uidParam?: string | null })[]>([]);
   const [adding, setAdding] = useState<string | null>(null);
+  /** By vendor: the markets picked for the vendor being added ("Add vendor" at the top). */
+  const [addMarkets, setAddMarkets] = useState<string[]>([]);
   const [suggesting, setSuggesting] = useState<string | null>(null);
   const [asking, setAsking] = useState<string | null>(null);
   const [form, setForm] = useState(EMPTY_FORM);
@@ -69,7 +71,13 @@ export function VendorsTab({ project, editable, reload }: { project: ProjectDeta
 
   async function add(countryId: string) {
     setError(null);
-    const targets = form.applyToAll ? project.countries.filter((c) => !c.allocations.some((a) => a.vendorId === form.vendorId)) : project.countries.filter((c) => c.id === countryId);
+    const free = (c: Country) => !c.allocations.some((a) => a.vendorId === form.vendorId);
+    const targets =
+      countryId === '*'
+        ? project.countries.filter((c) => addMarkets.includes(c.id) && free(c))
+        : form.applyToAll
+          ? project.countries.filter(free)
+          : project.countries.filter((c) => c.id === countryId);
     try {
       let allowAbove = false;
       for (const c of targets) {
@@ -238,15 +246,60 @@ export function VendorsTab({ project, editable, reload }: { project: ProjectDeta
       <Section
         title="Vendors per market"
         actions={
-          <div className="grid grid-cols-2 gap-1 rounded-lg bg-sunken p-1 text-xs" role="radiogroup" aria-label="Group vendors">
-            {(['vendor', 'market'] as const).map((v) => (
-              <button key={v} role="radio" aria-checked={view === v} onClick={() => setView(v)} className={clsx('rounded-md px-3 py-1 font-semibold', view === v ? 'bg-panel text-brand shadow-sm' : 'text-muted')}>
-                By {v}
-              </button>
-            ))}
+          <div className="flex flex-wrap items-center gap-2">
+            {editable && view === 'vendor' && adding !== '*' && (
+              <button className="btn-primary px-2.5 py-1.5 text-xs" onClick={() => { setAdding('*'); setForm(EMPTY_FORM); setAddMarkets(project.countries.map((c) => c.id)); }}><Plus className="h-3.5 w-3.5" /> Add vendor</button>
+            )}
+            <div className="grid grid-cols-2 gap-1 rounded-lg bg-sunken p-1 text-xs" role="radiogroup" aria-label="Group vendors">
+              {(['vendor', 'market'] as const).map((v) => (
+                <button key={v} role="radio" aria-checked={view === v} onClick={() => { setView(v); if (adding === '*') setAdding(null); }} className={clsx('rounded-md px-3 py-1 font-semibold', view === v ? 'bg-panel text-brand shadow-sm' : 'text-muted')}>
+                  By {v}
+                </button>
+              ))}
+            </div>
           </div>
         }
       >
+        {adding === '*' && view === 'vendor' && (() => {
+          const first = project.countries.find((c) => addMarkets.includes(c.id)) ?? project.countries[0];
+          const taken = (c: Country) => !!form.vendorId && c.allocations.some((a) => a.vendorId === form.vendorId);
+          const picked = project.countries.filter((c) => addMarkets.includes(c.id) && !taken(c));
+          const currencies = [...new Set(picked.map((c) => c.currency))];
+          const high = form.cpi !== '' && picked.some((c) => Number(form.cpi) > Number(c.cpi));
+          return (
+            <div className="mb-5 rounded-lg border border-brand/30 bg-brand/5 p-4" aria-label="Add a vendor">
+              <div className="mb-3 text-sm font-semibold">Add a vendor to this project</div>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-5">
+                <div className="sm:col-span-2">
+                  <Field label="Vendor">
+                    <PartyPicker<PartyOpt> kind="vendor" parties={vendors} value={form.vendorId} exclude={project.countries.every((c) => c.allocations.length) ? project.countries.reduce<string[]>((acc, c, i) => (i === 0 ? c.allocations.map((a) => a.vendorId) : acc.filter((id) => c.allocations.some((a) => a.vendorId === id))), []) : []} taken={vendors.map((v) => v.code)} onChange={(id) => setForm((f) => ({ ...f, vendorId: id, uidParam: vendors.find((v) => v.id === id)?.uidParam || f.uidParam }))} onAdded={(v) => setVendors((vs) => [...vs, v].sort((a, b) => a.name.localeCompare(b.name)))} />
+                  </Field>
+                </div>
+                <Field label={`Payout CPI${currencies.length === 1 ? ` (${currencies[0]})` : ''}`} hint={shareOf(form.vendorId) != null && form.cpi === '' ? `Empty: ${shareOf(form.vendorId)}% of each market's client CPI` : undefined}>
+                  <input className={clsx('input', high && 'border-bad')} type="number" step="0.01" min={0} value={form.cpi} placeholder={first && shareOf(form.vendorId) != null ? String(Math.round(Number(first.cpi) * shareOf(form.vendorId)!) / 100) : undefined} onChange={(e) => setForm({ ...form, cpi: e.target.value })} />
+                </Field>
+                <Field label="Target completes"><input className="input" type="number" placeholder="Market target" value={form.targetCompletes} onChange={(e) => setForm({ ...form, targetCompletes: e.target.value })} /></Field>
+                <Field label="Link variable"><AddableSelect field="uidParam" base={['vid', 'uid', 'rid', 'pid', 'id']} value={form.uidParam} onChange={(v) => setForm((f) => ({ ...f, uidParam: v }))} placeholder="vid" /></Field>
+              </div>
+              <fieldset className="mt-3">
+                <legend className="mb-1 text-xs font-medium text-muted">Markets</legend>
+                <div className="flex flex-wrap gap-2">
+                  {project.countries.map((c) => (
+                    <label key={c.id} className={clsx('chip cursor-pointer border px-2.5 py-1', taken(c) ? 'border-line text-muted' : addMarkets.includes(c.id) ? 'border-brand bg-brand/10 text-brand' : 'border-line bg-panel')} title={taken(c) ? 'Already on this market' : undefined}>
+                      <input type="checkbox" className="mr-1.5" disabled={taken(c)} checked={!taken(c) && addMarkets.includes(c.id)} onChange={(e) => setAddMarkets((m) => (e.target.checked ? [...m, c.id] : m.filter((x) => x !== c.id)))} />
+                      {flag(c.countryCode)} {marketName(c)} <span className="ml-1 text-muted">· CPI {money(c.cpi, c.currency)}</span>
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+              {high && <p className="mt-2 flex items-center gap-1.5 text-xs text-bad"><AlertTriangle className="h-3.5 w-3.5" /> The payout is higher than the client CPI of a picked market. You will be asked to confirm.</p>}
+              <div className="mt-3 flex flex-wrap items-center gap-3">
+                <button className="btn-primary" disabled={!form.vendorId || !picked.length || (form.cpi === '' && shareOf(form.vendorId) == null)} onClick={() => add('*')}>Add to {picked.length} {picked.length === 1 ? 'market' : 'markets'}</button>
+                <button className="btn-ghost" onClick={() => setAdding(null)}>Cancel</button>
+              </div>
+            </div>
+          );
+        })()}
         <div className="flex flex-wrap gap-2">
           {project.countries.map((c) => (
             <a key={c.id} href={`#market-${c.id}`} onClick={() => setView('market')} className={clsx('chip border px-2.5 py-1 hover:border-brand', c.allocations.length ? 'border-line bg-panel' : 'border-warn/50 bg-warn/10')}>
@@ -304,7 +357,7 @@ export function VendorsTab({ project, editable, reload }: { project: ProjectDeta
       {reportFor && <VendorReport projectId={project.id} projectCode={project.projectCode} vendorId={reportFor.id} vendorName={reportFor.name} onClose={() => setReportFor(null)} />}
       {view === 'vendor' &&
         (byVendor.length === 0 ? (
-          <Empty>No vendors yet. Switch to “By market” to add them.</Empty>
+          <Empty>No vendors yet. Use “Add vendor” above, or switch to “By market”.</Empty>
         ) : (
           byVendor.map(({ vendor, rows }) => (
             <Section

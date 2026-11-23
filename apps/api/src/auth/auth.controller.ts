@@ -91,10 +91,12 @@ export class AuthController {
     const org = await this.prisma.organization.findUniqueOrThrow({ where: { id: user.organizationId } });
     const links = await this.prisma.user.findUniqueOrThrow({
       where: { id: user.id },
-      select: { preferences: true, tourVersion: true, tourOutcome: true, tourAt: true, client: { select: { id: true, name: true } }, vendor: { select: { id: true, name: true } } },
+      select: { canDeleteProjects: true, preferences: true, tourVersion: true, tourOutcome: true, tourAt: true, client: { select: { id: true, name: true } }, vendor: { select: { id: true, name: true } } },
     });
     return {
       user,
+      /** May move projects to the recycle bin (admins always; others when an admin allows it). */
+      canDeleteProjects: user.role === 'ADMIN' || !!user.superAdmin || links.canDeleteProjects,
       organization: { id: org.id, name: org.name, slug: org.slug },
       branding: await this.branding.brand(org.id),
       client: links.client,

@@ -36,6 +36,8 @@ export const REASON_LABELS: Record<string, string> = {
   SAME_FINGERPRINT: 'Same device fingerprint entered before',
   SAME_DEVICE: 'Same IP and browser entered before',
   SAME_IP_OPEN: 'Same IP already has the survey open (another tab or window)',
+  SAME_BROWSER_ENTRY: 'This browser already entered the project',
+  SAME_DEVICE_OTHER_BROWSER: 'Same device and network already entered the project in another browser',
   PRESCREEN: 'Did not qualify on the prescreener',
   GATE_SCREENOUT: 'Did not qualify on the gate survey',
   GATE_INCOMPLETE: 'Gave missing or invalid gate answers',

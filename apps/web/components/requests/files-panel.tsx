@@ -7,7 +7,7 @@ import { API_URL, ApiError, api, get } from '@/lib/api';
 import { downloadFile } from '@/lib/download';
 import { FILE_ACCEPT, FILE_KIND_LABEL, FileKind, fileSize, SharedFile } from './types';
 
-export interface Audience { value: string; label: string; clientId?: string; vendorId?: string }
+export interface Audience { value: string; label: string; clientId?: string; vendorId?: string; vendorsAll?: boolean }
 
 /**
  * Lists shared files and uploads new ones. Staff use `/files`, portals `/portal/files`; the API decides
@@ -71,6 +71,7 @@ export function FilesPanel({
       const a = audiences?.find((x) => x.value === audience);
       if (a?.clientId) form.append('clientId', a.clientId);
       if (a?.vendorId) form.append('vendorId', a.vendorId);
+      if (a?.vendorsAll) form.append('vendorsAll', 'true');
       if (projectId) form.append('projectId', projectId);
       if (note.trim()) form.append('note', note.trim());
       if (kind === 'COMPLIANCE' && expiresAt) form.append('expiresAt', new Date(`${expiresAt}T23:59:59`).toISOString());

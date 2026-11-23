@@ -22,7 +22,7 @@ interface Status {
 interface CaptchaInfo { providers: Record<'turnstile' | 'hcaptcha', { configured: boolean; siteKey: string | null }> }
 interface Summary { entries: number; gate: { required: number; passed: number }; reasons: { reason: string; label: string; status: string; count: number }[]; risk?: { low: number; medium: number; high: number } }
 
-type Key = 'gateSurvey' | 'prescreening' | 'captcha' | 'urlProtection' | 'duplicateDetection' | 'browserFingerprinting' | 'cookieValidation' | 'geolocation' | 'timezoneTracking' | 'browserLanguage' | 'torDetection' | 'proxyDetection' | 'automationDetection' | 'crossProjectDuplicates' | 'oneOpenPerIp';
+type Key = 'gateSurvey' | 'prescreening' | 'captcha' | 'urlProtection' | 'duplicateDetection' | 'browserFingerprinting' | 'cookieValidation' | 'geolocation' | 'timezoneTracking' | 'browserLanguage' | 'torDetection' | 'proxyDetection' | 'automationDetection' | 'crossProjectDuplicates' | 'oneOpenPerIp' | 'oneEntryPerBrowser';
 
 const FRAUD_KEYS: Key[] = ['proxyDetection', 'automationDetection', 'crossProjectDuplicates'];
 
@@ -49,6 +49,7 @@ const GROUPS: { title: string; icon: typeof Bot; items: { key: Key; label: strin
     items: [
       { key: 'duplicateDetection', label: 'Duplicate detection', help: 'Same IP address and browser entering this project again, through any vendor.' },
       { key: 'oneOpenPerIp', label: 'One open survey per IP', help: 'While a respondent from an IP address is still in the survey, nobody else from that address can start it (stops extra tabs and windows). Turn it off to test again and again from one office network. The same respondent ID can never enter twice.' },
+      { key: 'oneEntryPerBrowser', label: 'One entry per browser and device', help: 'A browser that has opened the link once cannot enter again with another respondent ID, and another browser on the same device and network counts as the same person.' },
       { key: 'browserFingerprinting', label: 'Browser fingerprinting', help: 'Same device, recognised from screen, hardware and browser traits, even after a browser update or a language change.' },
       { key: 'cookieValidation', label: 'Cookie validation', help: 'Needs cookies switched on, and catches the same browser coming back.' },
       { key: 'crossProjectDuplicates', label: 'Across projects', help: 'Same device or browser already took part in another of your projects (rules below).' },
@@ -176,7 +177,7 @@ export function SecurityTab({ project, editable, reload }: { project: ProjectDet
                     return (
                       <li key={it.key} className="flex items-start gap-3 p-3">
                         <div className="min-w-0 flex-1">
-                          <div className="text-sm font-medium">{it.label}</div>
+                          <div className="flex items-center gap-1 text-sm font-medium">{it.label}<InfoTip id={`check:${it.key}`} label={it.label} /></div>
                           <div className="text-xs text-muted">{it.help}</div>
                           {n && <div className={clsx('mt-1 text-xs', n.tone === 'warn' ? 'text-warn' : 'text-ok')}>{n.text}</div>}
                         </div>

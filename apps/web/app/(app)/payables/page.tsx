@@ -119,7 +119,7 @@ function Payables() {
                   <tbody>
                     {owed.map((v) => (
                       <tr key={`${v.vendor.id}:${v.currency}`} className="border-t border-line">
-                        <td className="td">{v.vendor.name} <span className="font-mono text-xs text-muted">{v.vendor.code}</span> <span className="chip bg-sunken text-muted">{v.currency}</span></td>
+                        <td className="td"><Link href={`/payables/vendors/${v.vendor.id}`} className="font-medium text-brand hover:underline">{v.vendor.name}</Link> <span className="font-mono text-xs text-muted">{v.vendor.code}</span> <span className="chip bg-sunken text-muted">{v.currency}</span></td>
                         {(['pending', 'unbilled', 'draft', 'due'] as const).map((k) => (
                           <td key={k} className={clsx('td text-right tabular-nums', !v[k].completes && 'text-muted')}>
                             {v[k].completes ? <>{amt.format(v[k].amount)}<div className="text-xs text-muted">{v[k].completes} completes</div></> : '–'}
@@ -155,7 +155,7 @@ function Payables() {
                       <tr key={b.id} className="border-t border-line hover:bg-sunken/50">
                         <td className="td"><Link href={`/payables/${b.id}`} className="font-mono text-brand hover:underline">{b.number}</Link></td>
                         <td className="td"><BillStatus status={b.status} overdue={b.overdue} /></td>
-                        <td className="td">{b.vendor.name}</td>
+                        <td className="td"><Link href={`/payables/vendors/${b.vendor.id}`} className="hover:text-brand hover:underline">{b.vendor.name}</Link></td>
                         <td className="td font-mono text-xs">{b.vendorReference ?? '–'}</td>
                         <td className="td text-right tabular-nums">{b.completes}</td>
                         <td className="td text-right tabular-nums">{b.currency} {amt.format(b.total)}</td>

@@ -108,6 +108,7 @@ export function InfoTip({ id, entry, label, className, size = 'sm' }: { id?: str
             <HelpLine term="What it is for" text={help.what} />
             {help.how && <HelpLine term="How to use it" text={help.how} />}
             {help.where && <HelpLine term="Where it applies" text={help.where} />}
+            {help.example && <HelpLine term="Example" text={help.example} />}
           </dl>
         </div>,
         document.body,

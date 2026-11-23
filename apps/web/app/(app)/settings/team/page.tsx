@@ -3,12 +3,12 @@ import clsx from 'clsx';
 import { Copy, LogOut, Mail, UserPlus } from 'lucide-react';
 import { FormEvent, useCallback, useEffect, useState } from 'react';
 import { useMe } from '@/components/me';
-import { Empty, ErrorBox, Loading, PageHeader, Section } from '@/components/ui';
+import { Empty, ErrorBox, Loading, PageHeader, Section, Toggle } from '@/components/ui';
 import { api, get, post } from '@/lib/api';
-import { Label } from '@/components/help';
+import { InfoTip, Label } from '@/components/help';
 
 type Role = 'ADMIN' | 'PROJECT_MANAGER' | 'SALES' | 'VIEWER';
-interface Member { id: string; name: string; email: string; role: Role; active: boolean; status: 'active' | 'invited' | 'deactivated'; inviteExpiresAt: string | null; lastLoginAt: string | null; mfaEnabled: boolean; sso: string[]; isYou: boolean }
+interface Member { id: string; name: string; email: string; role: Role; active: boolean; status: 'active' | 'invited' | 'deactivated'; inviteExpiresAt: string | null; lastLoginAt: string | null; mfaEnabled: boolean; sso: string[]; isYou: boolean; canDeleteProjects?: boolean }
 interface Team { emailConfigured: boolean; users: Member[] }
 
 const ROLES: [Role, string, string][] = [
@@ -92,7 +92,7 @@ export default function TeamPage() {
         {!team ? <Loading /> : rows.length === 0 ? <p className="text-sm text-muted">Nobody here.</p> : (
           <div className="-mx-5 overflow-x-auto px-5">
             <table className="w-full min-w-[760px] text-sm">
-              <thead><tr><th className="th">Person</th><th className="th">Role</th><th className="th">Status</th><th className="th">Sign-in</th><th className="th">Last sign-in</th><th className="th" /></tr></thead>
+              <thead><tr><th className="th">Person</th><th className="th">Role</th><th className="th">Status</th><th className="th"><span className="inline-flex items-center gap-1">May delete projects<InfoTip id="team.canDeleteProjects" /></span></th><th className="th">Sign-in</th><th className="th">Last sign-in</th><th className="th" /></tr></thead>
               <tbody>
                 {rows.map((m) => (
                   <tr key={m.id} className="border-t border-line" data-member={m.email}>
@@ -103,6 +103,13 @@ export default function TeamPage() {
                       </select>
                     </td>
                     <td className="td"><span className={clsx('chip', STATUS[m.status][1])}>{STATUS[m.status][0]}</span>{m.status === 'invited' && m.inviteExpiresAt && <div className="mt-1 text-xs text-muted">{new Date(m.inviteExpiresAt) < new Date() ? 'Invitation expired' : `Until ${when(m.inviteExpiresAt)}`}</div>}</td>
+                    <td className="td">
+                      {m.role === 'ADMIN' ? (
+                        <span className="text-xs text-muted">Always (admin)</span>
+                      ) : (
+                        <Toggle label={`${m.name} may delete projects`} checked={!!m.canDeleteProjects} onChange={(v) => patch(m, { canDeleteProjects: v }, v ? `Let ${m.name} delete projects? Deleted projects go to the recycle bin for 30 days.` : undefined)} />
+                      )}
+                    </td>
                     <td className="td text-xs">{[m.mfaEnabled && 'Two-step', ...m.sso.map((s) => s[0].toUpperCase() + s.slice(1))].filter(Boolean).join(' · ') || 'Password'}</td>
                     <td className="td whitespace-nowrap text-xs text-muted">{when(m.lastLoginAt)}</td>
                     <td className="td">

@@ -3,7 +3,7 @@ import { ArrowLeft, Printer } from 'lucide-react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
-import { BillDocument, type Bill } from '@/components/finance/bill-document';
+import { BillDocument, PAYMENT_MODES, type Bill } from '@/components/finance/bill-document';
 import { TaxEditor } from '@/components/finance/totals';
 import { canEdit, useMe } from '@/components/me';
 import { ErrorBox, Loading } from '@/components/ui';
@@ -21,6 +21,8 @@ export default function BillPage() {
   const [dueDays, setDueDays] = useState(30);
   const [vendorRef, setVendorRef] = useState('');
   const [payRef, setPayRef] = useState('');
+  const [payMode, setPayMode] = useState('BANK_TRANSFER');
+  const [paidOn, setPaidOn] = useState(() => new Date().toISOString().slice(0, 10));
   const [notes, setNotes] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -48,7 +50,10 @@ export default function BillPage() {
   return (
     <div className="mx-auto max-w-4xl">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <Link href="/payables" className="flex items-center gap-1 text-sm text-muted hover:text-ink"><ArrowLeft className="h-4 w-4" />Vendor payables</Link>
+        <span className="flex items-center gap-3">
+          <Link href="/payables" className="flex items-center gap-1 text-sm text-muted hover:text-ink"><ArrowLeft className="h-4 w-4" />Vendor payables</Link>
+          <Link href={`/payables/vendors/${bill.vendor.id}`} className="text-sm text-brand hover:underline">{bill.vendor.name}: all projects and bills</Link>
+        </span>
         <div className="flex flex-wrap items-center gap-2">
           {editable && (bill.status === 'DRAFT' || bill.status === 'APPROVED') && (
             <button className="btn-danger" disabled={busy} onClick={() => change({ status: 'VOID' }, `Void ${bill.number}? Its ${bill.completes} completes go back to “approved, not billed”.`)}>Void</button>
@@ -69,8 +74,10 @@ export default function BillPage() {
       )}
       {editable && bill.status === 'APPROVED' && (
         <div className="no-print card mb-4 flex flex-wrap items-end gap-3 p-4">
+          <label><Label>Mode of payment</Label><select className="input w-44" value={payMode} onChange={(e) => setPayMode(e.target.value)}>{Object.entries(PAYMENT_MODES).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></label>
+          <label><Label>Paid on</Label><input type="date" className="input w-40" max={new Date().toISOString().slice(0, 10)} value={paidOn} onChange={(e) => setPaidOn(e.target.value)} /></label>
           <label><Label>Payment reference</Label><input className="input w-56" placeholder="Bank transfer ID" maxLength={120} value={payRef} onChange={(e) => setPayRef(e.target.value)} /></label>
-          <button className="btn-primary" disabled={busy} onClick={() => change({ status: 'PAID', ...(payRef.trim() ? { paymentReference: payRef.trim() } : {}) }, `Record payment of ${bill.currency} ${amt.format(bill.total)} to ${bill.vendor.name}?`)}>Mark as paid</button>
+          <button className="btn-primary" disabled={busy || !paidOn} onClick={() => change({ status: 'PAID', paymentMode: payMode, paidOn, ...(payRef.trim() ? { paymentReference: payRef.trim() } : {}) }, `Record payment of ${bill.currency} ${amt.format(bill.total)} to ${bill.vendor.name} by ${PAYMENT_MODES[payMode]} on ${paidOn}?`)}>Mark as paid</button>
         </div>
       )}
 

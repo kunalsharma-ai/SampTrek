@@ -357,6 +357,13 @@ export class DashboardController {
       const proj = projects.find((x) => x.id === p.projectId);
       if (proj) items.push({ id: `approve-${proj.id}`, severity: 'info', title: `${p._count._all} complete${p._count._all === 1 ? '' : 's'} to review on ${proj.projectCode}`, detail: proj.name, href: `/projects/${proj.id}` });
     }
+    // Requests to delete a project, for the people who may delete projects (feedback 2026-11-23).
+    const mayDelete = u.role === 'ADMIN' || !!u.superAdmin || !!(await this.prisma.user.findUnique({ where: { id: u.id }, select: { canDeleteProjects: true } }))?.canDeleteProjects;
+    if (mayDelete) {
+      const asks = await this.prisma.project.findMany({ where: { organizationId: org, deleteRequestedAt: { not: null } }, select: { id: true, projectCode: true, name: true, deleteRequestedById: true, deleteRequestReason: true }, take: 10 });
+      const who = new Map((await this.prisma.user.findMany({ where: { id: { in: asks.map((x) => x.deleteRequestedById).filter((x): x is string => !!x) }, organizationId: org }, select: { id: true, name: true } })).map((x) => [x.id, x.name]));
+      for (const a of asks) items.push({ id: `delete-request-${a.id}`, severity: 'warn', title: `${who.get(a.deleteRequestedById ?? '') ?? 'Someone'} asks to delete ${a.projectCode}`, detail: a.deleteRequestReason ? `${a.name}. Reason: ${a.deleteRequestReason}` : a.name, href: '/projects/recycle-bin' });
+    }
     // The person's own task reminders and overdue tasks.
     for (const t of await this.tasks.reminders(u)) items.push({ id: `task-${t.id}`, severity: t.overdue ? 'bad' : 'warn', title: t.overdue ? `Overdue: ${t.title}` : `Reminder: ${t.title}`, detail: [t.project?.projectCode, t.dueAt ? `due ${t.dueAt.toISOString().slice(0, 10)}` : null].filter(Boolean).join(' · ') || 'Task assigned to you', href: '/tasks' });
     // @mentions of this person and handovers waiting for them (docs/TEAM_COLLABORATION.md).

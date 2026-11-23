@@ -12,12 +12,13 @@ import { ForecastPanel } from '@/components/project/forecast-panel';
 import { HistoryTab } from '@/components/project/history-tab';
 import { TeamTab } from '@/components/project/team-tab';
 import { SaveTemplate } from '@/components/project/save-template';
-import { AlertTriangle, BadgeCheck, Database, CircleSlash, Clock, CopyPlus, Gauge, Hourglass, LayoutTemplate, MonitorPlay, Percent, Rabbit, Route, ShieldAlert, X } from 'lucide-react';
+import { AlertTriangle, BadgeCheck, Database, CircleSlash, Clock, CopyPlus, Gauge, Trash2, Hourglass, LayoutTemplate, MonitorPlay, Percent, Rabbit, Route, ShieldAlert, X } from 'lucide-react';
 import { RedirectsPopup } from '@/components/project/redirects-popup';
 import { RespondentReport } from '@/components/project/vendor-report';
 import { DashboardLinksPopup } from '@/components/project/dashboard-links';
 import { StatusMenu } from '@/components/project/status-menu';
 import { CloneProject } from '@/components/project/clone-project';
+import { DeleteProject } from '@/components/project/delete-project';
 import { MonitorTab } from '@/components/project/monitor-tab';
 import { QuotasTab } from '@/components/project/quotas-tab';
 import { QaStudio } from '@/components/project/qa-studio';
@@ -49,6 +50,7 @@ export default function ProjectPage() {
   const [error, setError] = useState<unknown>(null);
   const [savingTemplate, setSavingTemplate] = useState(false);
   const [cloning, setCloning] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [redirectsOpen, setRedirectsOpen] = useState(false);
   const [sharing, setSharing] = useState(false);
   /** Status card (or View data) whose respondents are open in the report popup; '' = all. */
@@ -159,6 +161,7 @@ export default function ProjectPage() {
             {editable && hasFeature(me, 'client_dashboards') && <button className="btn-ghost" onClick={() => setSharing(true)} title="A live, read-only page for your client"><MonitorPlay className="h-4 w-4" /> Client dashboard</button>}
             <button className="btn-ghost" onClick={() => setRedirectsOpen(true)}><Route className="h-4 w-4" /> Redirects</button>
             <button className="btn-ghost" onClick={() => setDataFor({ status: '', title: 'All respondents' })} title="Every respondent of this project, with search, field chooser and download"><Database className="h-4 w-4" /> View &amp; download data</button>
+            {editable && <button className="btn-ghost text-bad" onClick={() => { setDeleting(!deleting); setCloning(false); setSavingTemplate(false); }} title={me?.canDeleteProjects ? 'Move to the recycle bin (30 days to restore)' : 'Ask an admin to delete this project'}><Trash2 className="h-4 w-4" /> {me?.canDeleteProjects ? 'Delete' : p.deleteRequestedAt ? 'Delete requested' : 'Ask to delete'}</button>}
             <span className="inline-flex items-center gap-1">
               <StatusMenu status={p.status} editable={editable} onChange={setStatus} />
               <InfoTip entry={findHelp('project.statusMenu')} />
@@ -189,6 +192,7 @@ export default function ProjectPage() {
       {dataFor && <RespondentReport key={dataFor.status} projectId={p.id} projectCode={p.projectCode} title={p.projectCode} status={dataFor.status} onClose={() => setDataFor(null)} />}
       {savingTemplate && <SaveTemplate project={p} onClose={() => setSavingTemplate(false)} />}
       {cloning && <CloneProject project={p} onClose={() => setCloning(false)} />}
+      {deleting && <DeleteProject project={p} canDelete={!!me?.canDeleteProjects} onClose={() => setDeleting(false)} onRequested={reload} />}
 
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <h2 className="flex items-center gap-1.5 text-sm font-semibold">Fieldwork status <InfoTip id="project.fieldStatus" /></h2>

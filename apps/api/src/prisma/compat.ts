@@ -313,8 +313,35 @@ type Extendable = {
   }): unknown;
 };
 
+// ---- Recycle bin ---------------------------------------------------------------------------------
+
+/** Reads that leave out projects in the recycle bin unless the filter names deletedAt itself. */
+const BIN_READS = new Set(['findMany', 'findFirst', 'findFirstOrThrow', 'count', 'aggregate', 'groupBy']);
+
+/** True when a filter mentions `key` anywhere (at any depth). */
+function mentions(where: unknown, key: string): boolean {
+  if (Array.isArray(where)) return where.some((w) => mentions(w, key));
+  if (!isPlain(where)) return false;
+  return Object.entries(where).some(([k, v]) => k === key || mentions(v, key));
+}
+
+/**
+ * A project in the recycle bin (deletedAt set, feedback 2026-11-23) is left out of every project
+ * list, count and lookup, so it disappears from the whole app until it is restored or purged.
+ * Projects stored before the field existed have no deletedAt at all, which counts as not deleted.
+ * The recycle bin itself and the purge name deletedAt in their filter and so see them.
+ */
+export function withoutBin(model: string, operation: string, args: Data | undefined): Data | undefined {
+  if (model !== 'Project' || !BIN_READS.has(operation)) return args;
+  const a: Data = args ?? {};
+  if (mentions(a.where, 'deletedAt')) return a;
+  const live = { OR: [{ deletedAt: null }, { deletedAt: { isSet: false } }] };
+  return { ...a, where: a.where ? { AND: [a.where, live] } : live };
+}
+
 /** Rewrites one operation's arguments with the PostgreSQL rules above. */
-async function fixOperation(raw: RawRunner, model: string, operation: string, args: Data): Promise<Data> {
+async function fixOperation(raw: RawRunner, model: string, operation: string, args0: Data): Promise<Data> {
+  const args = withoutBin(model, operation, args0) as Data;
   if (!args) return args;
   const a = fixArgs(model, args) as Data;
   switch (operation) {

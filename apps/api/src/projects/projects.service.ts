@@ -1,3 +1,4 @@
+import { notifyVendors } from '../portal/vendor-notices';
 import { vendorReport, vendorReportQuery } from './vendor-report';
 import { cleanOverrides, effectiveSecurity, type SecurityOverrides } from '../survey/vendor-security';
 import { EntitlementsService } from '../super-admin/entitlements';
@@ -449,6 +450,11 @@ export class ProjectsService {
     if (body.workOrderNo && body.workOrderNo !== p.workOrderNo) await claimManualWorkOrder(this.prisma, u.organizationId, body.workOrderNo, id);
     const data: Prisma.ProjectUncheckedUpdateInput = { ...body } as Prisma.ProjectUncheckedUpdateInput;
     if (body.security) data.security = normalizeSecurity(body.security);
+    const notesChanged = body.quotaNotes !== undefined && (body.quotaNotes?.trim() || null) !== (p.quotaNotes ?? null);
+    if (body.quotaNotes !== undefined) {
+      data.quotaNotes = body.quotaNotes?.trim() || null;
+      if (notesChanged) data.quotaNotesUpdatedAt = new Date();
+    }
     // A new client keeps no contact of the old one.
     if (clientChanged && body.clientContactId === undefined) data.clientContactId = null;
     for (const k of ['gateQuestions', 'prescreen'] as const) {
@@ -468,6 +474,13 @@ export class ProjectsService {
     });
     await this.history.record(u, id, before);
     await this.audit.record({ organizationId: u.organizationId, actorId: u.id, action: 'project.update', entityType: 'Project', entityId: id, detail: body });
+    if (notesChanged) {
+      await notifyVendors(this.prisma, {
+        projectId: id, kind: 'notes',
+        title: (label) => (data.quotaNotes ? `New quota notes for ${label}` : `Quota notes removed for ${label}`),
+        detail: data.quotaNotes ? String(data.quotaNotes).split('\n').slice(0, 3).join(' ').replace(/\t/g, ' · ').slice(0, 300) : 'The quota notes were cleared.',
+      });
+    }
     if (body.status && body.status !== p.status) {
       await this.webhooks.emit(u.organizationId, 'project.status_changed', { project: { id, projectCode: p.projectCode, name: body.name ?? p.name }, from: p.status, to: body.status, changedBy: { name: u.name, email: u.email } });
     }
@@ -651,6 +664,14 @@ export class ProjectsService {
     });
     await this.audit.record({ organizationId: u.organizationId, actorId: u.id, action: 'country.update', entityType: 'ProjectCountry', entityId: countryId, detail: body });
     await this.history.record(u, projectId, before);
+    // Vendors see the new market quota in their portal, with the time (feedback 2026-11-23).
+    if (body.targetCompletes !== undefined && body.targetCompletes !== current.targetCompletes) {
+      await notifyVendors(this.prisma, {
+        projectId, countryId, kind: 'quota',
+        title: (label, market) => `New quota for ${label}${market ? ` · ${market}` : ''}: ${body.targetCompletes} completes`,
+        detail: `The market target changed from ${current.targetCompletes} to ${body.targetCompletes} completes (${c.completes} done so far).`,
+      });
+    }
     return c;
   }
 
@@ -782,6 +803,11 @@ export class ProjectsService {
       },
     });
     await this.audit.record({ organizationId: u.organizationId, actorId: u.id, action: 'allocation.add', entityType: 'ProjectCountry', entityId: countryId, detail: { vendorId: vendor.id } });
+    await notifyVendors(this.prisma, {
+      projectId, countryId, vendorIds: [vendor.id], kind: 'status',
+      title: (label, market) => `You were added to ${label}${market ? ` · ${market}` : ''}`,
+      detail: `Target ${a.targetCompletes} completes. Your links are on the project page.`,
+    });
     return a;
   }
 
@@ -797,6 +823,13 @@ export class ProjectsService {
       data: { ...rest, ...(cpi !== undefined ? { cpi: Number(cpi) } : {}) },
     });
     await this.audit.record({ organizationId: u.organizationId, actorId: u.id, action: 'allocation.update', entityType: 'VendorAllocation', entityId: allocationId, detail: body });
+    if (rest.targetCompletes !== undefined && rest.targetCompletes !== found.targetCompletes) {
+      await notifyVendors(this.prisma, {
+        projectId, countryId, vendorIds: [found.vendorId], kind: 'quota',
+        title: (label, market) => `New quota for ${label}${market ? ` · ${market}` : ''}: ${rest.targetCompletes} completes for you`,
+        detail: `Your target changed from ${found.targetCompletes} to ${rest.targetCompletes} completes (${a.completes} done so far).`,
+      });
+    }
     return a;
   }
 

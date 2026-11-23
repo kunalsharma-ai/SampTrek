@@ -5,6 +5,7 @@ import { Download } from 'lucide-react';
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { VendorBills } from '@/components/finance/vendor-bills';
+import { PortalStatement, VendorNotices } from '@/components/portal/vendor-extras';
 import { CopyButton } from '@/components/project/vendors-tab';
 import { Empty, ErrorBox, Loading, OutcomeChip, PageHeader, Progress, Section, StatusChip, money } from '@/components/ui';
 import { get } from '@/lib/api';
@@ -28,17 +29,24 @@ interface Allocation {
   cpi: string | null; currency: string; targetCompletes: number; completes: number; entryLink: string; testEntryLink: string; stats: Record<string, number>;
   uniqueLinksOnly?: boolean; uniqueLinks?: { total: number; unused: number };
 }
+interface ProjectRow {
+  project: { id: string; projectCode: string; name: string; status: string; category: string };
+  markets: string[]; target: number; completes: number; accepting: boolean; clicks: number; terminates: number; overquota: number; security: number; dropouts: number;
+  avgLoi: number | null; ir: number | null; conversion: number | null; unreadNotices: number;
+}
 interface SessionRow {
   id: string; vendorRespondentId: string; status: string; approval: string; isTest: boolean; payout: string | null; startedAt: string;
   project: { projectCode: string; name: string }; projectCountry: { countryCode: string; currency: string };
 }
 interface Callback { id: string; url: string; state: string; attempts: number; lastStatusCode: number | null; lastError: string | null; createdAt: string }
 
-const TABS = ['Projects', 'Respondents', 'Callbacks', 'Statements'] as const;
+const TABS = ['Projects', 'Notifications', 'Respondents', 'Callbacks', 'Statements'] as const;
 
 export default function VendorPortal() {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [allocs, setAllocs] = useState<Allocation[] | null>(null);
+  const [projects, setProjects] = useState<ProjectRow[] | null>(null);
+  const [unread, setUnread] = useState(0);
   const [sessions, setSessions] = useState<SessionRow[] | null>(null);
   const [callbacks, setCallbacks] = useState<Callback[] | null>(null);
   const [tab, setTab] = useState<(typeof TABS)[number]>('Projects');
@@ -49,6 +57,8 @@ export default function VendorPortal() {
   useEffect(() => {
     get<Summary>('/portal/vendor/summary').then(setSummary).catch(setError);
     get<Allocation[]>('/portal/vendor/allocations').then(setAllocs).catch(setError);
+    get<ProjectRow[]>('/portal/vendor/projects').then(setProjects).catch(setError);
+    get<{ unread: number }>('/portal/vendor/notices').then((r) => setUnread(r.unread)).catch(() => {});
     get<unknown[]>('/portal/vendor/disputable').then((r) => setDisputable(r.length)).catch(() => {});
   }, []);
   const requestNo = useRef(0);
@@ -102,60 +112,50 @@ export default function VendorPortal() {
         {TABS.map((t) => (
           <button key={t} role="tab" aria-selected={tab === t} onClick={() => setTab(t)} className={clsx('-mb-px whitespace-nowrap border-b-2 px-4 py-2.5 text-sm', tab === t ? 'border-brand font-medium text-brand' : 'border-transparent text-muted hover:text-ink')}>
             {t}
+            {t === 'Notifications' && unread > 0 && <span className="ml-1.5 rounded-full bg-brand px-1.5 text-[11px] font-semibold text-white">{unread}</span>}
           </button>
         ))}
       </div>
 
       {tab === 'Projects' &&
-        (!allocs ? <Loading /> : allocs.length === 0 ? <Empty>No projects have been assigned to you yet.</Empty> : (
-          <div className="space-y-4">
-            {allocs.map((a) => (
-              <div key={a.id} className="card p-5">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className={clsx('chip', a.accepting ? 'bg-ok/15 text-ok' : 'bg-sunken text-muted')}>{a.accepting ? 'Accepting traffic' : 'Not accepting traffic'}</span>
-                      {a.status !== 'ACTIVE' && <StatusChip status={a.status} />}
-                    </div>
-                    <h2 className="mt-2 truncate font-semibold">{a.project.name}</h2>
-                    <p className="text-sm text-muted">
-                      {a.project.projectCode} · {flag(a.countryCode)} {countryName(a.countryCode)} ({a.language}) · {a.project.category}
-                      {a.targetGroup ? ` · ${a.targetGroup}` : ''}
-                    </p>
-                  </div>
-                  <Progress value={a.completes} max={a.targetCompletes} />
-                </div>
-                <dl className="mt-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-5">
-                  {a.cpi != null && <div><dt className="text-xs text-muted">Your CPI</dt><dd className="font-medium">{money(a.cpi, a.currency)}</dd></div>}
-                  <div><dt className="text-xs text-muted">LOI</dt><dd>{a.loiMinutes} min</dd></div>
-                  <div><dt className="text-xs text-muted">IR</dt><dd>{a.irPercent}%</dd></div>
-                  <div><dt className="text-xs text-muted">Terminates</dt><dd className="tabular-nums">{a.stats.TERMINATE}</dd></div>
-                  <div><dt className="text-xs text-muted">Quota full</dt><dd className="tabular-nums">{a.stats.QUOTA_FULL}</dd></div>
-                </dl>
-                <div className="mt-4 rounded-lg bg-sunken/60 p-3">
-                  <div className="text-xs text-muted">Entry link (replace [UID] with your respondent ID)</div>
-                  <code className="mt-1 block break-all text-xs">{a.entryLink}</code>
-                  <div className="mt-2 flex flex-wrap gap-1.5">
-                    <CopyButton text={a.entryLink} label="Copy live link" />
-                    <CopyButton text={a.testEntryLink} label="Copy test link" />
-                    <span className="self-center text-xs text-muted">Devices: {Object.entries(a.project.devices).filter(([, v]) => v).map(([k]) => k).join(', ')}</span>
-                  </div>
-                </div>
-                {!!a.uniqueLinks?.total && (
-                  <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line p-3">
-                    <div className="text-sm">
-                      <span className="font-medium">One-time unique links</span>
-                      <span className="ml-2 text-xs text-muted">{a.uniqueLinks.unused.toLocaleString()} unused of {a.uniqueLinks.total.toLocaleString()}. Send one link to each respondent; each works once.{a.uniqueLinksOnly ? ' The shared live link is closed for this market.' : ''}</span>
-                    </div>
-                    <button className="btn-ghost px-2.5 py-1 text-xs" onClick={() => downloadFile(`/portal/vendor/allocations/${a.id}/unique-links.csv`, `${a.project.projectCode}-${a.countryCode}-unique-links.csv`).catch(setError)}>
-                      <Download className="h-3.5 w-3.5" /> Download unused links
-                    </button>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
+        (!projects ? <Loading /> : projects.length === 0 ? <Empty>No projects have been assigned to you yet.</Empty> : (
+          <Section title={`Projects (${projects.length})`} help="portal.vendorProjects">
+            <div className="-m-5 overflow-x-auto">
+              <table className="w-full min-w-[980px] text-sm">
+                <thead className="border-b border-line bg-sunken/60">
+                  <tr><th className="th">Project</th><th className="th">Markets</th><th className="th">Status</th><th className="th">Completes</th><th className="th text-right">Clicks</th><th className="th text-right">Terminates</th><th className="th text-right">Over quota</th><th className="th text-right">Avg LOI</th><th className="th text-right">IR</th><th className="th text-right">Conversion</th><th className="th" /></tr>
+                </thead>
+                <tbody className="divide-y divide-line">
+                  {projects.map((r) => (
+                    <tr key={r.project.id} className="hover:bg-sunken/40">
+                      <td className="td">
+                        <Link className="font-medium hover:text-brand hover:underline" href={`/portal/vendor/projects/${r.project.id}`}>{r.project.name}</Link>
+                        <span className="block text-xs text-muted">{r.project.projectCode} · {r.project.category}</span>
+                      </td>
+                      <td className="td whitespace-nowrap">{r.markets.map((m) => flag(m)).join(' ')} <span className="text-xs text-muted">{r.markets.join(', ')}</span></td>
+                      <td className="td"><span className={clsx('chip', r.accepting ? 'bg-ok/15 text-ok' : 'bg-sunken text-muted')}>{r.accepting ? 'Accepting traffic' : 'Not accepting'}</span></td>
+                      <td className="td"><Progress value={r.completes} max={r.target} /></td>
+                      <td className="td text-right tabular-nums">{r.clicks}</td>
+                      <td className="td text-right tabular-nums">{r.terminates}</td>
+                      <td className="td text-right tabular-nums">{r.overquota}</td>
+                      <td className="td text-right tabular-nums">{r.avgLoi != null ? `${r.avgLoi} min` : '–'}</td>
+                      <td className="td text-right tabular-nums">{r.ir != null ? `${r.ir}%` : '–'}</td>
+                      <td className="td text-right tabular-nums">{r.conversion != null ? `${r.conversion}%` : '–'}</td>
+                      <td className="td text-right">
+                        <span className="inline-flex items-center gap-2">
+                          {r.unreadNotices > 0 && <span className="chip bg-brand/10 text-brand" title="New updates">{r.unreadNotices} new</span>}
+                          <Link className="btn-ghost px-2.5 py-1 text-xs" href={`/portal/vendor/projects/${r.project.id}`}>Open</Link>
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Section>
         ))}
+
+      {tab === 'Notifications' && <VendorNotices />}
 
       {tab === 'Respondents' && (
         <Section
@@ -228,7 +228,12 @@ export default function VendorPortal() {
           )}
         </Section>
       )}
-      {tab === 'Statements' && <VendorBills />}
+      {tab === 'Statements' && (
+        <div className="space-y-6">
+          <PortalStatement />
+          <VendorBills />
+        </div>
+      )}
     </>
   );
 }
