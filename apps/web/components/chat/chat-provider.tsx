@@ -8,7 +8,7 @@
  * each id once, so a retry never makes a double.
  */
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { API_URL, ApiError, api, get, post } from '@/lib/api';
+import { API_URL, ApiError, api, get, loginAsToken, post } from '@/lib/api';
 
 export type Tone = 'on_track' | 'at_risk' | 'blocked' | 'done';
 export interface ChatAuthor { id: string; name: string; role: string; superAdmin: boolean }
@@ -217,6 +217,14 @@ export function ChatProvider({ userId, enabled, children }: { userId: string; en
   // The live connection. EventSource reconnects by itself; when the server refuses, try again on a timer.
   useEffect(() => {
     if (!enabled || !ready) return;
+    // A "login as" tab: the live connection would sign in with the admin's own cookie, so this tab
+    // catches up every 15 seconds instead.
+    if (loginAsToken()) {
+      setConnection('live');
+      catchUp();
+      const t = setInterval(catchUp, 15_000);
+      return () => clearInterval(t);
+    }
     let es: EventSource | null = null;
     let retry: ReturnType<typeof setTimeout> | undefined;
     let wait = 2000;

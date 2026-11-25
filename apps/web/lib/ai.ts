@@ -1,4 +1,4 @@
-import { API_URL, ApiError } from './api';
+import { API_URL, authInit, ApiError } from './api';
 
 export type Display =
   | { type: 'table'; title: string; columns: { key: string; label: string; align?: 'right' }[]; rows: Record<string, string | number | boolean | null>[]; links?: (string | null)[] }
@@ -21,7 +21,7 @@ export interface AiSettings { enabled: boolean; roles: string[]; actions: boolea
 export async function uploadDoc(file: File): Promise<AiDoc> {
   const fd = new FormData();
   fd.append('file', file);
-  const res = await fetch(`${API_URL}/api/v1/ai/documents`, { method: 'POST', body: fd, credentials: 'include' });
+  const res = await fetch(`${API_URL}/api/v1/ai/documents`, { method: 'POST', body: fd, ...authInit() });
   const data = await res.json().catch(() => null);
   if (!res.ok) throw new ApiError(res.status, data?.message ?? 'Upload failed');
   return data;

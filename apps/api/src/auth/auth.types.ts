@@ -10,4 +10,6 @@ export interface AuthUser {
   superAdmin?: boolean;
   /** The Super Admin is looking at this organisation read-only (docs/SUPER_ADMIN_OBSERVE.md); organizationId is that organisation. */
   observing?: { organizationId: string; name: string; homeOrganizationId: string };
+  /** "Login as" (src/auth/login-as.ts): the admin who opened this session. */
+  loginAsBy?: string;
 }

@@ -33,6 +33,18 @@ const optionSchema = z.object({
   exclusive: z.boolean().optional(),
 });
 
+/** Language codes as stored on a market (en, es, pt-BR, zh-Hans). */
+export const LANG_RE = /^[a-z]{2,3}(-[A-Za-z0-9]{2,4})?$/;
+/** One question in another language (feedback 2026-11-24): empty parts fall back to the original. */
+const translationSchema = z
+  .object({
+    text: z.string().max(500).optional(),
+    help: z.string().max(300).optional(),
+    options: z.record(z.string().regex(idRe), z.string().max(200)).optional(),
+    rows: z.record(z.string().regex(idRe), z.string().max(200)).optional(),
+  })
+  .strict();
+
 export const questionSchema = z
   .object({
     id: z.string().regex(idRe, 'Use letters, digits, - or _ (max 32)'),
@@ -61,6 +73,8 @@ export const questionSchema = z
       .default({}),
     /** number: answers outside this range are screened out (they are valid answers, just not qualifying). */
     qualify: z.object({ min: z.number().optional(), max: z.number().optional() }).strict().optional(),
+    /** Gate survey in the respondent's language: by market language code (feedback 2026-11-24). */
+    translations: z.record(z.string().regex(LANG_RE, 'Use a language code such as es or pt-BR'), translationSchema).optional(),
   })
   .superRefine((q, ctx) => {
     const v = q.validation;
@@ -87,6 +101,35 @@ export const questionListSchema = z
 export type Question = z.infer<typeof questionSchema>;
 export type Answer = { value: string | number | string[] | Record<string, string>; label: string };
 export type AnswerSet = Record<string, Answer>;
+
+/** The translation for a market language: exact (pt-BR), else the base language (pt). */
+export function translationFor(q: Pick<Question, 'translations'>, lang: string | null | undefined) {
+  if (!lang || !q.translations) return null;
+  const l = lang.trim();
+  const base = l.split('-')[0].toLowerCase();
+  const keys = Object.keys(q.translations);
+  const key = keys.find((k) => k.toLowerCase() === l.toLowerCase()) ?? keys.find((k) => k.toLowerCase() === base) ?? keys.find((k) => k.split('-')[0].toLowerCase() === base);
+  return key ? q.translations[key] : null;
+}
+
+/**
+ * Questions as the respondent of one market sees them: texts in the market's language where a
+ * translation exists, the original otherwise. Ids, answers and rules are unchanged, so answers are
+ * scored and stored the same in every language.
+ */
+export function localizeQuestions(qs: Question[], lang: string | null | undefined): Question[] {
+  return qs.map(({ translations, ...q }) => {
+    const t = translationFor({ translations }, lang);
+    if (!t) return q;
+    return {
+      ...q,
+      text: t.text?.trim() || q.text,
+      ...(q.help !== undefined || t.help ? { help: t.help?.trim() || q.help } : {}),
+      ...(q.options ? { options: q.options.map((o) => ({ ...o, label: t.options?.[o.id]?.trim() || o.label })) } : {}),
+      ...(q.rows ? { rows: q.rows.map((r) => ({ ...r, label: t.rows?.[r.id]?.trim() || r.label })) } : {}),
+    };
+  });
+}
 
 export function questionsOf(json: unknown): Question[] {
   const r = questionListSchema.safeParse(json ?? []);

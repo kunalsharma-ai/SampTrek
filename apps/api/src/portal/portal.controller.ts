@@ -14,7 +14,7 @@ import { EntitlementsService } from '../super-admin/entitlements';
 import { forVendor } from '../common/vendor-safe';
 import { VendorProjectsController } from './vendor-projects';
 import { entryQuery } from '../projects/markets';
-import { BadRequestException, Body, Controller, ForbiddenException, Get, Module, NotFoundException, Param, Patch, Post, Query, Res } from '@nestjs/common';
+import { BadRequestException, Body, Controller, ForbiddenException, Get, HttpCode, Module, NotFoundException, Param, Patch, Post, Query, Res } from '@nestjs/common';
 import { Response } from 'express';
 import { Prisma } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
@@ -389,7 +389,7 @@ export class PortalUsersController {
         ...(vendorId ? { vendorId } : {}),
       },
       orderBy: { createdAt: 'desc' },
-      select: { id: true, name: true, email: true, role: true, active: true, createdAt: true, client: { select: { id: true, name: true } }, vendor: { select: { id: true, name: true } } },
+      select: { id: true, name: true, email: true, role: true, active: true, createdAt: true, lastLoginAt: true, passwordSetAt: true, client: { select: { id: true, name: true } }, vendor: { select: { id: true, name: true } } },
     });
   }
 
@@ -422,14 +422,32 @@ export class PortalUsersController {
     }
   }
 
+  /**
+   * A new password for a client or vendor login (feedback 2026-11-24). Stored passwords are hashed and
+   * can never be shown, so a forgotten one is replaced: the admin types or generates a new one and
+   * shares it. Their other sessions end.
+   */
+  @Post(':id/password')
+  @HttpCode(200)
+  async setPassword(@CurrentUser() u: AuthUser, @Param('id') id: string, @Body(new ZodPipe(z.object({ password: z.string().min(10, 'Use at least 10 characters').max(200) }).strict())) body: { password: string }) {
+    const found = await this.prisma.user.findFirst({ where: { id, organizationId: u.organizationId, role: { in: ['CLIENT_USER', 'VENDOR_USER'] } } });
+    if (!found) throw new NotFoundException();
+    const now = new Date();
+    await this.prisma.user.update({ where: { id }, data: { passwordHash: await bcrypt.hash(body.password, 10), passwordSetAt: now, sessionsValidAfter: now } });
+    await this.audit.record({ organizationId: u.organizationId, actorId: u.id, action: 'portal-user.password', entityType: 'User', entityId: id });
+    return { id, passwordSetAt: now };
+  }
+
   @Patch(':id')
-  async setActive(@CurrentUser() u: AuthUser, @Param('id') id: string, @Body(new ZodPipe(z.object({ active: z.boolean() }))) body: { active: boolean }) {
+  async setActive(@CurrentUser() u: AuthUser, @Param('id') id: string, @Body(new ZodPipe(z.object({ active: z.boolean().optional(), name: z.string().trim().min(1).max(120).optional() }).refine((b) => b.active !== undefined || b.name !== undefined, 'Nothing to change'))) body: { active?: boolean; name?: string }) {
     const found = await this.prisma.user.findFirst({ where: { id, organizationId: u.organizationId, role: { in: ['CLIENT_USER', 'VENDOR_USER'] } } });
     if (!found) throw new NotFoundException();
     if (body.active && !found.active) await this.entitlements.assertLimit(u.organizationId, 'portalUsers');
-    await this.prisma.user.update({ where: { id }, data: { active: body.active } });
-    await this.audit.record({ organizationId: u.organizationId, actorId: u.id, action: body.active ? 'portal-user.activate' : 'portal-user.deactivate', entityType: 'User', entityId: id });
-    return { id, active: body.active };
+    await this.prisma.user.update({ where: { id }, data: { ...(body.active !== undefined && { active: body.active }), ...(body.name !== undefined && { name: body.name }) } });
+    // Feedback 2026-11-25: a misspelt name can be corrected; the old name stays in the audit log.
+    if (body.name !== undefined && body.name !== found.name) await this.audit.record({ organizationId: u.organizationId, actorId: u.id, action: 'portal-user.rename', entityType: 'User', entityId: id, detail: { name: body.name, previous: found.name } });
+    if (body.active !== undefined) await this.audit.record({ organizationId: u.organizationId, actorId: u.id, action: body.active ? 'portal-user.activate' : 'portal-user.deactivate', entityType: 'User', entityId: id });
+    return { id, active: body.active ?? found.active, name: body.name ?? found.name };
   }
 }
 

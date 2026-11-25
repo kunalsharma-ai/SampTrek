@@ -1,0 +1,201 @@
+/**
+ * Texts of the respondent gate page in the market's language (feedback 2026-11-24). The questions
+ * themselves come from the project's translations (questions.ts, localizeQuestions); these are the
+ * buttons, step titles and error messages around them. A language that is not listed uses English.
+ * {n}, {a} and {b} are filled in by the page.
+ */
+export type GateText = typeof EN;
+
+const EN = {
+  consentIntro: 'Please read this before you start.',
+  privacy: 'Read the full privacy notice',
+  agree: 'I have read this and I agree',
+  decline: 'I do not agree',
+  quickCheck: 'Quick check',
+  robot: 'Please answer this to show you are not a robot.',
+  aboutYou: 'About you',
+  aboutIntro: 'A few questions before the survey starts.',
+  more: 'A few more questions',
+  moreIntro: 'These help us check the survey is right for you.',
+  step: 'Step {n} of {t}',
+  start: 'Start survey',
+  cont: 'Continue',
+  optional: '(optional)',
+  select: 'Select…',
+  starting: 'Starting your survey',
+  seconds: 'This takes a few seconds.',
+  answer: 'Please answer this question.',
+  number: 'Enter a number.',
+  whole: 'Enter a whole number.',
+  min: 'Enter {n} or more.',
+  max: 'Enter {n} or less.',
+  minLen: 'Enter at least {n} characters.',
+  maxLen: 'Enter at most {n} characters.',
+  format: 'Check the format of your answer.',
+  everyRow: 'Answer every row.',
+  atLeast: 'Choose at least {n}.',
+  noMore: 'Choose no more than {n}.',
+  range: 'Choose {a} to {b}.',
+  upTo: 'Choose up to {n}.',
+  tick: 'Please tick the box to agree, or choose “I do not agree”.',
+  failed: 'Something went wrong. Please check your connection and try again.',
+  tryAgain: 'Try again',
+  chooseAnswer: 'Please choose an answer.',
+  typeAnswer: 'Please type your answer.',
+  completeCheck: 'Please complete the check.',
+};
+
+const T: Record<string, Partial<GateText>> = {
+  es: {
+    consentIntro: 'Lea esto antes de empezar.', privacy: 'Leer el aviso de privacidad completo', agree: 'He leído esto y estoy de acuerdo', decline: 'No estoy de acuerdo',
+    quickCheck: 'Comprobación rápida', robot: 'Responda para demostrar que no es un robot.', aboutYou: 'Sobre usted', aboutIntro: 'Unas preguntas antes de empezar la encuesta.',
+    more: 'Unas preguntas más', moreIntro: 'Nos ayudan a comprobar que la encuesta es adecuada para usted.', step: 'Paso {n} de {t}', start: 'Empezar la encuesta', cont: 'Continuar',
+    optional: '(opcional)', select: 'Seleccione…', starting: 'Iniciando su encuesta', seconds: 'Esto tarda unos segundos.', answer: 'Responda a esta pregunta.',
+    number: 'Introduzca un número.', whole: 'Introduzca un número entero.', min: 'Introduzca {n} o más.', max: 'Introduzca {n} o menos.', minLen: 'Escriba al menos {n} caracteres.',
+    maxLen: 'Escriba como máximo {n} caracteres.', format: 'Revise el formato de su respuesta.', everyRow: 'Responda todas las filas.', atLeast: 'Elija al menos {n}.',
+    noMore: 'Elija como máximo {n}.', range: 'Elija de {a} a {b}.', upTo: 'Elija hasta {n}.', tick: 'Marque la casilla para aceptar o elija «No estoy de acuerdo».',
+    failed: 'Algo salió mal. Compruebe su conexión e inténtelo de nuevo.', tryAgain: 'Intentar de nuevo', chooseAnswer: 'Elija una respuesta.', typeAnswer: 'Escriba su respuesta.', completeCheck: 'Complete la comprobación.',
+  },
+  fr: {
+    consentIntro: 'Veuillez lire ceci avant de commencer.', privacy: 'Lire la politique de confidentialité', agree: 'J’ai lu et j’accepte', decline: 'Je n’accepte pas',
+    quickCheck: 'Vérification rapide', robot: 'Répondez pour montrer que vous n’êtes pas un robot.', aboutYou: 'À propos de vous', aboutIntro: 'Quelques questions avant le début de l’enquête.',
+    more: 'Quelques questions de plus', moreIntro: 'Elles nous aident à vérifier que l’enquête vous convient.', step: 'Étape {n} sur {t}', start: 'Commencer l’enquête', cont: 'Continuer',
+    optional: '(facultatif)', select: 'Choisir…', starting: 'Démarrage de votre enquête', seconds: 'Cela prend quelques secondes.', answer: 'Veuillez répondre à cette question.',
+    number: 'Saisissez un nombre.', whole: 'Saisissez un nombre entier.', min: 'Saisissez {n} ou plus.', max: 'Saisissez {n} ou moins.', minLen: 'Saisissez au moins {n} caractères.',
+    maxLen: 'Saisissez au plus {n} caractères.', format: 'Vérifiez le format de votre réponse.', everyRow: 'Répondez à chaque ligne.', atLeast: 'Choisissez au moins {n}.',
+    noMore: 'Choisissez au plus {n}.', range: 'Choisissez de {a} à {b}.', upTo: 'Choisissez jusqu’à {n}.', tick: 'Cochez la case pour accepter, ou choisissez « Je n’accepte pas ».',
+    failed: 'Une erreur est survenue. Vérifiez votre connexion et réessayez.', tryAgain: 'Réessayer', chooseAnswer: 'Choisissez une réponse.', typeAnswer: 'Saisissez votre réponse.', completeCheck: 'Terminez la vérification.',
+  },
+  de: {
+    consentIntro: 'Bitte lesen Sie dies, bevor Sie beginnen.', privacy: 'Vollständige Datenschutzerklärung lesen', agree: 'Ich habe dies gelesen und stimme zu', decline: 'Ich stimme nicht zu',
+    quickCheck: 'Kurze Prüfung', robot: 'Bitte beantworten Sie dies, um zu zeigen, dass Sie kein Roboter sind.', aboutYou: 'Über Sie', aboutIntro: 'Ein paar Fragen, bevor die Umfrage beginnt.',
+    more: 'Noch ein paar Fragen', moreIntro: 'So prüfen wir, ob die Umfrage zu Ihnen passt.', step: 'Schritt {n} von {t}', start: 'Umfrage starten', cont: 'Weiter',
+    optional: '(optional)', select: 'Auswählen…', starting: 'Ihre Umfrage wird gestartet', seconds: 'Das dauert ein paar Sekunden.', answer: 'Bitte beantworten Sie diese Frage.',
+    number: 'Geben Sie eine Zahl ein.', whole: 'Geben Sie eine ganze Zahl ein.', min: 'Geben Sie {n} oder mehr ein.', max: 'Geben Sie {n} oder weniger ein.', minLen: 'Geben Sie mindestens {n} Zeichen ein.',
+    maxLen: 'Geben Sie höchstens {n} Zeichen ein.', format: 'Prüfen Sie das Format Ihrer Antwort.', everyRow: 'Beantworten Sie jede Zeile.', atLeast: 'Wählen Sie mindestens {n}.',
+    noMore: 'Wählen Sie höchstens {n}.', range: 'Wählen Sie {a} bis {b}.', upTo: 'Wählen Sie bis zu {n}.', tick: 'Setzen Sie das Häkchen zum Zustimmen oder wählen Sie „Ich stimme nicht zu“.',
+    failed: 'Etwas ist schiefgelaufen. Prüfen Sie Ihre Verbindung und versuchen Sie es erneut.', tryAgain: 'Erneut versuchen', chooseAnswer: 'Bitte wählen Sie eine Antwort.', typeAnswer: 'Bitte geben Sie Ihre Antwort ein.', completeCheck: 'Bitte schließen Sie die Prüfung ab.',
+  },
+  it: {
+    consentIntro: 'Leggi prima di iniziare.', privacy: 'Leggi l’informativa sulla privacy completa', agree: 'Ho letto e accetto', decline: 'Non accetto',
+    quickCheck: 'Controllo rapido', robot: 'Rispondi per dimostrare di non essere un robot.', aboutYou: 'Su di te', aboutIntro: 'Alcune domande prima di iniziare il sondaggio.',
+    more: 'Qualche altra domanda', moreIntro: 'Ci aiutano a capire se il sondaggio è adatto a te.', step: 'Passo {n} di {t}', start: 'Inizia il sondaggio', cont: 'Continua',
+    optional: '(facoltativo)', select: 'Seleziona…', starting: 'Avvio del sondaggio', seconds: 'Ci vogliono pochi secondi.', answer: 'Rispondi a questa domanda.',
+    number: 'Inserisci un numero.', whole: 'Inserisci un numero intero.', min: 'Inserisci {n} o più.', max: 'Inserisci {n} o meno.', minLen: 'Inserisci almeno {n} caratteri.',
+    maxLen: 'Inserisci al massimo {n} caratteri.', format: 'Controlla il formato della risposta.', everyRow: 'Rispondi a ogni riga.', atLeast: 'Scegli almeno {n}.',
+    noMore: 'Scegli al massimo {n}.', range: 'Scegli da {a} a {b}.', upTo: 'Scegli fino a {n}.', tick: 'Spunta la casella per accettare, oppure scegli «Non accetto».',
+    failed: 'Qualcosa è andato storto. Controlla la connessione e riprova.', tryAgain: 'Riprova', chooseAnswer: 'Scegli una risposta.', typeAnswer: 'Scrivi la tua risposta.', completeCheck: 'Completa il controllo.',
+  },
+  pt: {
+    consentIntro: 'Leia isto antes de começar.', privacy: 'Ler o aviso de privacidade completo', agree: 'Li e concordo', decline: 'Não concordo',
+    quickCheck: 'Verificação rápida', robot: 'Responda para mostrar que você não é um robô.', aboutYou: 'Sobre você', aboutIntro: 'Algumas perguntas antes de a pesquisa começar.',
+    more: 'Mais algumas perguntas', moreIntro: 'Elas nos ajudam a ver se a pesquisa é adequada para você.', step: 'Etapa {n} de {t}', start: 'Iniciar pesquisa', cont: 'Continuar',
+    optional: '(opcional)', select: 'Selecione…', starting: 'Iniciando sua pesquisa', seconds: 'Isso leva alguns segundos.', answer: 'Responda a esta pergunta.',
+    number: 'Digite um número.', whole: 'Digite um número inteiro.', min: 'Digite {n} ou mais.', max: 'Digite {n} ou menos.', minLen: 'Digite pelo menos {n} caracteres.',
+    maxLen: 'Digite no máximo {n} caracteres.', format: 'Verifique o formato da resposta.', everyRow: 'Responda todas as linhas.', atLeast: 'Escolha pelo menos {n}.',
+    noMore: 'Escolha no máximo {n}.', range: 'Escolha de {a} a {b}.', upTo: 'Escolha até {n}.', tick: 'Marque a caixa para concordar ou escolha “Não concordo”.',
+    failed: 'Algo deu errado. Verifique sua conexão e tente novamente.', tryAgain: 'Tentar novamente', chooseAnswer: 'Escolha uma resposta.', typeAnswer: 'Digite sua resposta.', completeCheck: 'Conclua a verificação.',
+  },
+  nl: {
+    consentIntro: 'Lees dit voordat u begint.', privacy: 'Lees de volledige privacyverklaring', agree: 'Ik heb dit gelezen en ga akkoord', decline: 'Ik ga niet akkoord',
+    quickCheck: 'Korte controle', robot: 'Beantwoord dit om te laten zien dat u geen robot bent.', aboutYou: 'Over u', aboutIntro: 'Een paar vragen voordat de enquête begint.',
+    more: 'Nog een paar vragen', moreIntro: 'Zo controleren we of de enquête bij u past.', step: 'Stap {n} van {t}', start: 'Enquête starten', cont: 'Doorgaan',
+    optional: '(optioneel)', select: 'Kies…', starting: 'Uw enquête wordt gestart', seconds: 'Dit duurt een paar seconden.', answer: 'Beantwoord deze vraag.',
+    number: 'Vul een getal in.', whole: 'Vul een geheel getal in.', min: 'Vul {n} of meer in.', max: 'Vul {n} of minder in.', minLen: 'Vul minstens {n} tekens in.',
+    maxLen: 'Vul hoogstens {n} tekens in.', format: 'Controleer de notatie van uw antwoord.', everyRow: 'Beantwoord elke rij.', atLeast: 'Kies er minstens {n}.',
+    noMore: 'Kies er hoogstens {n}.', range: 'Kies {a} tot {b}.', upTo: 'Kies er maximaal {n}.', tick: 'Vink het vakje aan om akkoord te gaan, of kies „Ik ga niet akkoord”.',
+    failed: 'Er ging iets mis. Controleer uw verbinding en probeer het opnieuw.', tryAgain: 'Opnieuw proberen', chooseAnswer: 'Kies een antwoord.', typeAnswer: 'Typ uw antwoord.', completeCheck: 'Voltooi de controle.',
+  },
+  ja: {
+    consentIntro: '開始する前にお読みください。', privacy: 'プライバシー通知の全文を読む', agree: '内容を読み、同意します', decline: '同意しません',
+    quickCheck: '簡単な確認', robot: 'ロボットでないことを示すために回答してください。', aboutYou: 'あなたについて', aboutIntro: 'アンケートの前にいくつか質問します。',
+    more: 'さらにいくつかの質問', moreIntro: 'このアンケートがあなたに合っているかを確認します。', step: 'ステップ {n} / {t}', start: 'アンケートを開始', cont: '次へ',
+    optional: '（任意）', select: '選択してください…', starting: 'アンケートを開始しています', seconds: '数秒お待ちください。', answer: 'この質問に回答してください。',
+    number: '数字を入力してください。', whole: '整数を入力してください。', min: '{n} 以上を入力してください。', max: '{n} 以下を入力してください。', minLen: '{n} 文字以上入力してください。',
+    maxLen: '{n} 文字以内で入力してください。', format: '回答の形式を確認してください。', everyRow: 'すべての行に回答してください。', atLeast: '{n} 個以上選んでください。',
+    noMore: '{n} 個以内で選んでください。', range: '{a}〜{b} 個選んでください。', upTo: '最大 {n} 個まで選べます。', tick: '同意する場合はチェックを入れるか、「同意しません」を選んでください。',
+    failed: 'エラーが発生しました。接続を確認して、もう一度お試しください。', tryAgain: 'もう一度試す', chooseAnswer: '回答を選んでください。', typeAnswer: '回答を入力してください。', completeCheck: '確認を完了してください。',
+  },
+  zh: {
+    consentIntro: '开始前请阅读以下内容。', privacy: '阅读完整的隐私声明', agree: '我已阅读并同意', decline: '我不同意',
+    quickCheck: '快速验证', robot: '请回答此问题以证明您不是机器人。', aboutYou: '关于您', aboutIntro: '调查开始前的几个问题。',
+    more: '再回答几个问题', moreIntro: '这些问题帮助我们确认此调查是否适合您。', step: '第 {n} 步，共 {t} 步', start: '开始调查', cont: '继续',
+    optional: '（可选）', select: '请选择…', starting: '正在开始调查', seconds: '只需几秒钟。', answer: '请回答此问题。',
+    number: '请输入数字。', whole: '请输入整数。', min: '请输入 {n} 或以上。', max: '请输入 {n} 或以下。', minLen: '请至少输入 {n} 个字符。',
+    maxLen: '最多输入 {n} 个字符。', format: '请检查答案的格式。', everyRow: '请回答每一行。', atLeast: '请至少选择 {n} 项。',
+    noMore: '最多选择 {n} 项。', range: '请选择 {a} 到 {b} 项。', upTo: '最多可选 {n} 项。', tick: '请勾选以表示同意，或选择“我不同意”。',
+    failed: '出现问题。请检查网络连接后重试。', tryAgain: '重试', chooseAnswer: '请选择一个答案。', typeAnswer: '请输入您的答案。', completeCheck: '请完成验证。',
+  },
+  ko: {
+    consentIntro: '시작하기 전에 읽어 주세요.', privacy: '개인정보 처리방침 전문 보기', agree: '내용을 읽었으며 동의합니다', decline: '동의하지 않습니다',
+    quickCheck: '간단한 확인', robot: '로봇이 아님을 확인하기 위해 답해 주세요.', aboutYou: '응답자 정보', aboutIntro: '설문 시작 전 몇 가지 질문입니다.',
+    more: '추가 질문', moreIntro: '이 설문이 귀하에게 맞는지 확인하는 질문입니다.', step: '{t}단계 중 {n}단계', start: '설문 시작', cont: '계속',
+    optional: '(선택)', select: '선택…', starting: '설문을 시작하는 중', seconds: '몇 초 정도 걸립니다.', answer: '이 질문에 답해 주세요.',
+    number: '숫자를 입력하세요.', whole: '정수를 입력하세요.', min: '{n} 이상을 입력하세요.', max: '{n} 이하를 입력하세요.', minLen: '{n}자 이상 입력하세요.',
+    maxLen: '{n}자 이하로 입력하세요.', format: '답변 형식을 확인하세요.', everyRow: '모든 행에 답해 주세요.', atLeast: '{n}개 이상 선택하세요.',
+    noMore: '{n}개 이하로 선택하세요.', range: '{a}~{b}개를 선택하세요.', upTo: '최대 {n}개까지 선택하세요.', tick: '동의하려면 체크하거나 "동의하지 않습니다"를 선택하세요.',
+    failed: '문제가 발생했습니다. 연결을 확인한 후 다시 시도하세요.', tryAgain: '다시 시도', chooseAnswer: '답을 선택하세요.', typeAnswer: '답을 입력하세요.', completeCheck: '확인을 완료하세요.',
+  },
+  ru: {
+    consentIntro: 'Прочитайте это перед началом.', privacy: 'Прочитать полное уведомление о конфиденциальности', agree: 'Я прочитал(а) и согласен(на)', decline: 'Я не согласен(на)',
+    quickCheck: 'Быстрая проверка', robot: 'Ответьте, чтобы подтвердить, что вы не робот.', aboutYou: 'О вас', aboutIntro: 'Несколько вопросов перед началом опроса.',
+    more: 'Ещё несколько вопросов', moreIntro: 'Они помогают понять, подходит ли вам этот опрос.', step: 'Шаг {n} из {t}', start: 'Начать опрос', cont: 'Продолжить',
+    optional: '(необязательно)', select: 'Выберите…', starting: 'Запускаем опрос', seconds: 'Это займёт несколько секунд.', answer: 'Ответьте на этот вопрос.',
+    number: 'Введите число.', whole: 'Введите целое число.', min: 'Введите {n} или больше.', max: 'Введите {n} или меньше.', minLen: 'Введите не менее {n} символов.',
+    maxLen: 'Введите не более {n} символов.', format: 'Проверьте формат ответа.', everyRow: 'Ответьте на каждую строку.', atLeast: 'Выберите не менее {n}.',
+    noMore: 'Выберите не более {n}.', range: 'Выберите от {a} до {b}.', upTo: 'Выберите до {n}.', tick: 'Отметьте поле, чтобы согласиться, или выберите «Я не согласен(на)».',
+    failed: 'Что-то пошло не так. Проверьте подключение и попробуйте снова.', tryAgain: 'Повторить', chooseAnswer: 'Выберите ответ.', typeAnswer: 'Введите ответ.', completeCheck: 'Пройдите проверку.',
+  },
+  ar: {
+    consentIntro: 'يرجى قراءة هذا قبل البدء.', privacy: 'اقرأ إشعار الخصوصية كاملاً', agree: 'قرأت هذا وأوافق', decline: 'لا أوافق',
+    quickCheck: 'تحقق سريع', robot: 'يرجى الإجابة لإثبات أنك لست روبوتًا.', aboutYou: 'عنك', aboutIntro: 'بعض الأسئلة قبل بدء الاستبيان.',
+    more: 'بعض الأسئلة الإضافية', moreIntro: 'تساعدنا على التأكد من أن الاستبيان مناسب لك.', step: 'الخطوة {n} من {t}', start: 'ابدأ الاستبيان', cont: 'متابعة',
+    optional: '(اختياري)', select: 'اختر…', starting: 'جارٍ بدء الاستبيان', seconds: 'يستغرق ذلك بضع ثوانٍ.', answer: 'يرجى الإجابة عن هذا السؤال.',
+    number: 'أدخل رقمًا.', whole: 'أدخل عددًا صحيحًا.', min: 'أدخل {n} أو أكثر.', max: 'أدخل {n} أو أقل.', minLen: 'أدخل {n} أحرف على الأقل.',
+    maxLen: 'أدخل {n} أحرف على الأكثر.', format: 'تحقق من صيغة إجابتك.', everyRow: 'أجب عن كل صف.', atLeast: 'اختر {n} على الأقل.',
+    noMore: 'اختر {n} على الأكثر.', range: 'اختر من {a} إلى {b}.', upTo: 'اختر حتى {n}.', tick: 'ضع علامة في المربع للموافقة، أو اختر «لا أوافق».',
+    failed: 'حدث خطأ. تحقق من اتصالك وحاول مرة أخرى.', tryAgain: 'حاول مرة أخرى', chooseAnswer: 'يرجى اختيار إجابة.', typeAnswer: 'يرجى كتابة إجابتك.', completeCheck: 'يرجى إكمال التحقق.',
+  },
+  hi: {
+    consentIntro: 'शुरू करने से पहले कृपया इसे पढ़ें।', privacy: 'पूरी गोपनीयता सूचना पढ़ें', agree: 'मैंने इसे पढ़ लिया है और मैं सहमत हूँ', decline: 'मैं सहमत नहीं हूँ',
+    quickCheck: 'त्वरित जाँच', robot: 'यह दिखाने के लिए उत्तर दें कि आप रोबोट नहीं हैं।', aboutYou: 'आपके बारे में', aboutIntro: 'सर्वे शुरू होने से पहले कुछ प्रश्न।',
+    more: 'कुछ और प्रश्न', moreIntro: 'इनसे हम देखते हैं कि यह सर्वे आपके लिए सही है या नहीं।', step: 'चरण {n} / {t}', start: 'सर्वे शुरू करें', cont: 'आगे बढ़ें',
+    optional: '(वैकल्पिक)', select: 'चुनें…', starting: 'आपका सर्वे शुरू हो रहा है', seconds: 'इसमें कुछ सेकंड लगते हैं।', answer: 'कृपया इस प्रश्न का उत्तर दें।',
+    number: 'एक संख्या लिखें।', whole: 'पूर्ण संख्या लिखें।', min: '{n} या उससे अधिक लिखें।', max: '{n} या उससे कम लिखें।', minLen: 'कम से कम {n} अक्षर लिखें।',
+    maxLen: 'अधिकतम {n} अक्षर लिखें।', format: 'अपने उत्तर का प्रारूप जाँचें।', everyRow: 'हर पंक्ति का उत्तर दें।', atLeast: 'कम से कम {n} चुनें।',
+    noMore: '{n} से अधिक न चुनें।', range: '{a} से {b} चुनें।', upTo: 'अधिकतम {n} चुनें।', tick: 'सहमति के लिए बॉक्स पर टिक करें, या “मैं सहमत नहीं हूँ” चुनें।',
+    failed: 'कुछ गलत हो गया। अपना कनेक्शन जाँचें और फिर से कोशिश करें।', tryAgain: 'फिर से कोशिश करें', chooseAnswer: 'कृपया एक उत्तर चुनें।', typeAnswer: 'कृपया अपना उत्तर लिखें।', completeCheck: 'कृपया जाँच पूरी करें।',
+  },
+  tr: {
+    consentIntro: 'Başlamadan önce lütfen bunu okuyun.', privacy: 'Gizlilik bildiriminin tamamını okuyun', agree: 'Okudum ve kabul ediyorum', decline: 'Kabul etmiyorum',
+    quickCheck: 'Hızlı kontrol', robot: 'Robot olmadığınızı göstermek için yanıtlayın.', aboutYou: 'Sizin hakkınızda', aboutIntro: 'Anket başlamadan önce birkaç soru.',
+    more: 'Birkaç soru daha', moreIntro: 'Anketin size uygun olup olmadığını anlamamıza yardımcı olur.', step: 'Adım {n} / {t}', start: 'Ankete başla', cont: 'Devam',
+    optional: '(isteğe bağlı)', select: 'Seçin…', starting: 'Anketiniz başlatılıyor', seconds: 'Bu birkaç saniye sürer.', answer: 'Lütfen bu soruyu yanıtlayın.',
+    number: 'Bir sayı girin.', whole: 'Tam sayı girin.', min: '{n} veya daha fazla girin.', max: '{n} veya daha az girin.', minLen: 'En az {n} karakter girin.',
+    maxLen: 'En fazla {n} karakter girin.', format: 'Yanıtınızın biçimini kontrol edin.', everyRow: 'Her satırı yanıtlayın.', atLeast: 'En az {n} seçin.',
+    noMore: 'En fazla {n} seçin.', range: '{a} ile {b} arasında seçin.', upTo: 'En fazla {n} seçin.', tick: 'Kabul etmek için kutuyu işaretleyin veya “Kabul etmiyorum”u seçin.',
+    failed: 'Bir sorun oluştu. Bağlantınızı kontrol edip tekrar deneyin.', tryAgain: 'Tekrar dene', chooseAnswer: 'Lütfen bir yanıt seçin.', typeAnswer: 'Lütfen yanıtınızı yazın.', completeCheck: 'Lütfen kontrolü tamamlayın.',
+  },
+  pl: {
+    consentIntro: 'Przeczytaj to przed rozpoczęciem.', privacy: 'Przeczytaj pełną informację o prywatności', agree: 'Przeczytałem(-am) i zgadzam się', decline: 'Nie zgadzam się',
+    quickCheck: 'Szybka weryfikacja', robot: 'Odpowiedz, aby potwierdzić, że nie jesteś robotem.', aboutYou: 'O Tobie', aboutIntro: 'Kilka pytań przed rozpoczęciem ankiety.',
+    more: 'Jeszcze kilka pytań', moreIntro: 'Pomagają nam sprawdzić, czy ankieta jest dla Ciebie.', step: 'Krok {n} z {t}', start: 'Rozpocznij ankietę', cont: 'Dalej',
+    optional: '(opcjonalnie)', select: 'Wybierz…', starting: 'Uruchamianie ankiety', seconds: 'To potrwa kilka sekund.', answer: 'Odpowiedz na to pytanie.',
+    number: 'Wpisz liczbę.', whole: 'Wpisz liczbę całkowitą.', min: 'Wpisz {n} lub więcej.', max: 'Wpisz {n} lub mniej.', minLen: 'Wpisz co najmniej {n} znaków.',
+    maxLen: 'Wpisz najwyżej {n} znaków.', format: 'Sprawdź format odpowiedzi.', everyRow: 'Odpowiedz w każdym wierszu.', atLeast: 'Wybierz co najmniej {n}.',
+    noMore: 'Wybierz najwyżej {n}.', range: 'Wybierz od {a} do {b}.', upTo: 'Wybierz do {n}.', tick: 'Zaznacz pole, aby wyrazić zgodę, lub wybierz „Nie zgadzam się”.',
+    failed: 'Coś poszło nie tak. Sprawdź połączenie i spróbuj ponownie.', tryAgain: 'Spróbuj ponownie', chooseAnswer: 'Wybierz odpowiedź.', typeAnswer: 'Wpisz odpowiedź.', completeCheck: 'Dokończ weryfikację.',
+  },
+};
+
+/** Languages the page texts come in, besides English. */
+export const GATE_LANGUAGES = Object.keys(T);
+
+export function gateText(lang: string | null | undefined): { lang: string; t: GateText; rtl: boolean } {
+  const base = (lang ?? 'en').split('-')[0].toLowerCase();
+  const tr = T[base];
+  return { lang: tr ? base : 'en', t: { ...EN, ...(tr ?? {}) }, rtl: base === 'ar' && !!tr };
+}
+
+/** "{n} of {t}" style filling. */
+export const fill = (s: string, v: Record<string, string | number>) => s.replace(/\{(\w)\}/g, (_, k: string) => String(v[k] ?? ''));

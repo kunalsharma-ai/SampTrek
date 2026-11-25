@@ -57,7 +57,26 @@ export function cleanQuestion(q: Question): Question {
   if (CHOICE.includes(q.type)) out.options = (q.options ?? []).map((o) => ({ id: o.id, label: o.label.trim(), action: o.action, ...(q.type === 'multi' && o.exclusive ? { exclusive: true } : {}) }));
   if (q.type === 'grid') out.rows = (q.rows ?? []).map((r) => ({ id: r.id, label: r.label.trim() }));
   if (q.type === 'number' && q.qualify && (q.qualify.min !== undefined || q.qualify.max !== undefined)) out.qualify = q.qualify;
+  const tr = cleanTranslations(out, q.translations);
+  if (tr) out.translations = tr;
   return out;
+}
+
+/** Translations without empty texts, or answers and rows that no longer exist. */
+function cleanTranslations(q: Question, all: Question['translations']): Question['translations'] | undefined {
+  if (!all) return undefined;
+  const ids = new Set((q.options ?? []).map((o) => o.id));
+  const rowIds = new Set((q.rows ?? []).map((r) => r.id));
+  const pick = (m: Record<string, string> | undefined, keep: Set<string>) => {
+    const e = Object.entries(m ?? {}).filter(([k, v]) => keep.has(k) && v.trim()).map(([k, v]) => [k, v.trim()]);
+    return e.length ? Object.fromEntries(e) : undefined;
+  };
+  const out: NonNullable<Question['translations']> = {};
+  for (const [lang, t] of Object.entries(all)) {
+    const c = { ...(t.text?.trim() ? { text: t.text.trim() } : {}), ...(t.help?.trim() && q.help ? { help: t.help.trim() } : {}), ...(pick(t.options, ids) ? { options: pick(t.options, ids) } : {}), ...(pick(t.rows, rowIds) ? { rows: pick(t.rows, rowIds) } : {}) };
+    if (Object.keys(c).length) out[lang] = c;
+  }
+  return Object.keys(out).length ? out : undefined;
 }
 
 const num = (s: string) => (s.trim() === '' ? undefined : Number(s));

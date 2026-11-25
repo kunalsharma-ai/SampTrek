@@ -112,6 +112,8 @@ export class AuthController {
       features: await this.featuresFor(user),
       /** Set while the Super Admin observes this organisation read-only (docs/SUPER_ADMIN_OBSERVE.md). */
       observing: user.observing ?? null,
+      /** Set when an admin opened this session with "Login as" (src/auth/login-as.ts). */
+      loginAs: user.loginAsBy ? { by: (await this.prisma.user.findUnique({ where: { id: user.loginAsBy }, select: { id: true, name: true } })) ?? { id: user.loginAsBy, name: 'An admin' } } : null,
     };
   }
 

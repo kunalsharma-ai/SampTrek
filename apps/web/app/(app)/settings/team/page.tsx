@@ -6,6 +6,8 @@ import { useMe } from '@/components/me';
 import { Empty, ErrorBox, Loading, PageHeader, Section, Toggle } from '@/components/ui';
 import { api, get, post } from '@/lib/api';
 import { InfoTip, Label } from '@/components/help';
+import { LoginAsButton } from '@/components/login-as-button';
+import { EditName } from '@/components/edit-name';
 
 type Role = 'ADMIN' | 'PROJECT_MANAGER' | 'SALES' | 'VIEWER';
 interface Member { id: string; name: string; email: string; role: Role; active: boolean; status: 'active' | 'invited' | 'deactivated'; inviteExpiresAt: string | null; lastLoginAt: string | null; mfaEnabled: boolean; sso: string[]; isYou: boolean; canDeleteProjects?: boolean }
@@ -46,6 +48,18 @@ export default function TeamPage() {
     setBusy(false);
   }
   const patch = (m: Member, body: object, confirmText?: string) => { if (confirmText && !confirm(confirmText)) return; void run(async () => { await api(`/team/${m.id}`, { method: 'PATCH', json: body }); }); };
+  const rename = (m: Member) => async (name: string) => {
+    setError(null);
+    setNote(null);
+    try {
+      await api(`/team/${m.id}`, { method: 'PATCH', json: { name } });
+      setNote({ text: `Name changed from “${m.name}” to “${name}”.` });
+      await load();
+    } catch (e) {
+      setError(e);
+      throw e;
+    }
+  };
   const link = (m: Member) => void run(async () => {
     const r = await post<{ purpose: string; emailed: boolean; url: string }>(`/team/${m.id}/link`);
     const what = r.purpose === 'invite' ? 'A new invitation' : 'A password reset link';
@@ -96,7 +110,7 @@ export default function TeamPage() {
               <tbody>
                 {rows.map((m) => (
                   <tr key={m.id} className="border-t border-line" data-member={m.email}>
-                    <td className="td"><div className="font-medium">{m.name}{m.isYou && <span className="ml-1.5 text-xs font-normal text-muted">(you)</span>}</div><div className="text-xs text-muted">{m.email}</div></td>
+                    <td className="td"><EditName name={m.name} suffix={m.isYou && <span className="ml-0.5 text-xs font-normal text-muted">(you)</span>} onSave={rename(m)} /><div className="text-xs text-muted">{m.email}</div></td>
                     <td className="td">
                       <select className="input h-8 py-0 text-sm" aria-label={`Role of ${m.name}`} value={m.role} disabled={m.isYou || !m.active} onChange={(e) => patch(m, { role: e.target.value }, `Make ${m.name} ${ROLE_LABEL[e.target.value as Role]}?`)}>
                         {ROLES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
@@ -117,6 +131,7 @@ export default function TeamPage() {
                         {m.active ? (
                           <>
                             <button className="btn-ghost px-2.5 py-1 text-xs" onClick={() => link(m)}>{m.status === 'invited' ? 'Resend invite' : 'Send reset link'}</button>
+                            {!m.isYou && m.status === 'active' && (m.role !== 'ADMIN' || (me?.user as { superAdmin?: boolean } | undefined)?.superAdmin) && <LoginAsButton userId={m.id} name={m.name} onError={setError} />}
                             {!m.isYou && <button className="btn-ghost px-2.5 py-1 text-xs" title="Sign out everywhere" aria-label={`Sign ${m.name} out everywhere`} onClick={() => signOut(m)}><LogOut className="h-3.5 w-3.5" /></button>}
                             {!m.isYou && <button className="btn-danger px-2.5 py-1 text-xs" onClick={() => patch(m, { active: false }, `Deactivate ${m.name}? They are signed out at once and cannot sign in. Their projects and history stay.`)}>Deactivate</button>}
                           </>

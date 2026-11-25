@@ -16,6 +16,7 @@ import { ProjectsService } from '../projects/projects.service';
 import { ReportsService } from '../reports/reports.service';
 import { TasksService } from '../tasks/tasks.service';
 import { BRIEF_TOOL, briefSystem, normalizeBrief } from './brief';
+import { textsOf, TRANSLATE_TOOL, translateSchema, translateSystem, translationsFrom } from './translate';
 import { AnthropicProvider } from './anthropic.provider';
 import { GeminiProvider } from './gemini.provider';
 import { OpenAiProvider } from './openai.provider';
@@ -197,8 +198,8 @@ export class AiService {
     const s = await this.settings(u.organizationId);
     const since = startOfDayUtc();
     const [mine, org] = await Promise.all([
-      this.prisma.aiUsage.count({ where: { userId: u.id, createdAt: { gte: since }, kind: { in: ['chat', 'voice', 'brief'] } } }),
-      this.prisma.aiUsage.count({ where: { organizationId: u.organizationId, createdAt: { gte: since }, kind: { in: ['chat', 'voice', 'brief'] } } }),
+      this.prisma.aiUsage.count({ where: { userId: u.id, createdAt: { gte: since }, kind: { in: ['chat', 'voice', 'brief', 'translate'] } } }),
+      this.prisma.aiUsage.count({ where: { organizationId: u.organizationId, createdAt: { gte: since }, kind: { in: ['chat', 'voice', 'brief', 'translate'] } } }),
     ]);
     const allowed = s.enabled && s.roles.includes(u.role as (typeof STAFF_ROLES)[number]);
     return {
@@ -230,7 +231,7 @@ export class AiService {
   /** Per person per minute and per day, and per organisation per day. */
   private async limit(u: AuthUser, s: AiSettings) {
     const now = Date.now();
-    const kinds = { kind: { in: ['chat', 'voice', 'brief'] } };
+    const kinds = { kind: { in: ['chat', 'voice', 'brief', 'translate'] } };
     const [minute, day, org] = await Promise.all([
       this.prisma.aiUsage.count({ where: { userId: u.id, createdAt: { gte: new Date(now - 60_000) }, ...kinds } }),
       this.prisma.aiUsage.count({ where: { userId: u.id, createdAt: { gte: startOfDayUtc() }, ...kinds } }),
@@ -511,6 +512,26 @@ export class AiService {
     const draft = await this.prisma.projectDraft.create({ data: { organizationId: u.organizationId, ownerId: u.id, title, data: data as unknown as Prisma.InputJsonValue }, select: { id: true, title: true, updatedAt: true } });
     await this.audit.record({ organizationId: u.organizationId, actorId: u.id, action: 'ai.brief.read', entityType: 'ProjectDraft', entityId: draft.id, detail: { file: doc?.name ?? null, pasted: doc ? 0 : pasted.length, filled: r.brief.filled, missing: r.brief.missing, model } });
     return { draftId: draft.id, title: draft.title, brief: r.brief };
+  }
+
+  /** Draft translation of gate survey questions into one market language (src/ai/translate.ts). */
+  async translateQuestions(u: AuthUser, body: z.infer<typeof translateSchema>) {
+    const s = await this.gate(u);
+    await this.limit(u, s);
+    const list = await this.attempts(u.organizationId);
+    const texts = textsOf(body.questions);
+    const req = { system: translateSystem(body.language), messages: [{ role: 'user' as const, parts: [{ text: `Translate these items:\n${JSON.stringify(texts)}` }] }], tools: [TRANSLATE_TOOL], forceTool: TRANSLATE_TOOL.name, temperature: 0 };
+    let out: GenerateResult;
+    try {
+      out = (await this.generate(u, list, req, { ok: 'translate', failed: 'translate' })).r;
+    } catch (e) {
+      if (e instanceof AiProviderError) throw new HttpException(e.message, e.kind === 'rate_limited' ? HttpStatus.TOO_MANY_REQUESTS : e.kind === 'blocked' ? HttpStatus.UNPROCESSABLE_ENTITY : HttpStatus.SERVICE_UNAVAILABLE);
+      throw e;
+    }
+    const call = out.calls.find((x) => x.name === TRANSLATE_TOOL.name);
+    const translations = translationsFrom(body.questions, call?.args.items);
+    if (!Object.keys(translations).length) throw new UnprocessableEntityException('The AI did not return a translation. Try again, or type it in.');
+    return { language: body.language, translations, missing: texts.length - Object.values(translations).reduce((n, t) => n + (t.text ? 1 : 0) + (t.help ? 1 : 0) + Object.keys(t.options ?? {}).length + Object.keys(t.rows ?? {}).length, 0) };
   }
 
   // ───────────── Documents ─────────────

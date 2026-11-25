@@ -1,4 +1,5 @@
 'use client';
+import { RenameProject } from '@/components/project/rename-project';
 import { Copyable } from '@/components/copy';
 import clsx from 'clsx';
 import { useParams } from 'next/navigation';
@@ -12,7 +13,7 @@ import { ForecastPanel } from '@/components/project/forecast-panel';
 import { HistoryTab } from '@/components/project/history-tab';
 import { TeamTab } from '@/components/project/team-tab';
 import { SaveTemplate } from '@/components/project/save-template';
-import { AlertTriangle, BadgeCheck, Database, CircleSlash, Clock, CopyPlus, Gauge, Trash2, Hourglass, LayoutTemplate, MonitorPlay, Percent, Rabbit, Route, ShieldAlert, X } from 'lucide-react';
+import { AlertTriangle, BadgeCheck, Database, CircleSlash, Clock, CopyPlus, Gauge, Trash2, Hourglass, LayoutTemplate, MonitorPlay, Pencil, Percent, Rabbit, Route, ShieldAlert, X } from 'lucide-react';
 import { RedirectsPopup } from '@/components/project/redirects-popup';
 import { RespondentReport } from '@/components/project/vendor-report';
 import { DashboardLinksPopup } from '@/components/project/dashboard-links';
@@ -45,6 +46,7 @@ export default function ProjectPage() {
   const { id } = useParams<{ id: string }>();
   const me = useMe();
   const editable = canEdit(me);
+  const [renaming, setRenaming] = useState(false);
   const [p, setP] = useState<ProjectDetail | null>(null);
   const [tab, setTab] = useState<(typeof TABS)[number]>('Overview');
   const [error, setError] = useState<unknown>(null);
@@ -156,6 +158,7 @@ export default function ProjectPage() {
         }
         actions={
           <>
+            {editable && <button className="btn-ghost" onClick={() => setRenaming(!renaming)} title="Change the project name"><Pencil className="h-4 w-4" /> Rename</button>}
             {editable && <button className="btn-ghost" onClick={() => { setCloning(!cloning); setSavingTemplate(false); }}><CopyPlus className="h-4 w-4" /> Clone project</button>}
             {editable && <button className="btn-ghost" onClick={() => { setSavingTemplate(!savingTemplate); setCloning(false); }}><LayoutTemplate className="h-4 w-4" /> Save as template</button>}
             {editable && hasFeature(me, 'client_dashboards') && <button className="btn-ghost" onClick={() => setSharing(true)} title="A live, read-only page for your client"><MonitorPlay className="h-4 w-4" /> Client dashboard</button>}
@@ -192,6 +195,7 @@ export default function ProjectPage() {
       {dataFor && <RespondentReport key={dataFor.status} projectId={p.id} projectCode={p.projectCode} title={p.projectCode} status={dataFor.status} onClose={() => setDataFor(null)} />}
       {savingTemplate && <SaveTemplate project={p} onClose={() => setSavingTemplate(false)} />}
       {cloning && <CloneProject project={p} onClose={() => setCloning(false)} />}
+      {renaming && <RenameProject project={p} onClose={() => setRenaming(false)} onSaved={reload} />}
       {deleting && <DeleteProject project={p} canDelete={!!me?.canDeleteProjects} onClose={() => setDeleting(false)} onRequested={reload} />}
 
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">

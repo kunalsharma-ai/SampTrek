@@ -37,12 +37,42 @@ function issueText(i: unknown): string {
   return String(i);
 }
 
+/**
+ * "Login as" (feedback 2026-11-24): an admin opened this tab as another user. The session lives in
+ * this tab's sessionStorage only and is sent as a Bearer header, so the admin's own sign-in (the
+ * cookie) in other tabs is never touched.
+ */
+export const LOGIN_AS_KEY = 'samptrek:login-as';
+export function loginAsToken(): string | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    return sessionStorage.getItem(LOGIN_AS_KEY);
+  } catch {
+    return null;
+  }
+}
+/** Ends a "login as" tab: forgets its session and closes it (or shows the admin's own app). */
+export function endLoginAs() {
+  try {
+    sessionStorage.removeItem(LOGIN_AS_KEY);
+  } catch {}
+  window.close();
+  // Tabs not opened by script cannot close themselves.
+  setTimeout(() => window.location.replace('/'), 150);
+}
+/** Headers and cookie mode for any call to the API from this tab. */
+export function authInit(): { credentials: RequestCredentials; headers: Record<string, string> } {
+  const t = loginAsToken();
+  return t ? { credentials: 'omit', headers: { Authorization: `Bearer ${t}` } } : { credentials: 'include', headers: {} };
+}
+
 export async function api<T = unknown>(path: string, init: RequestInit & { json?: unknown } = {}): Promise<T> {
   const { json, headers, ...rest } = init;
+  const auth = authInit();
   const res = await fetch(`${API_URL}/api/v1${path}`, {
-    credentials: 'include',
+    credentials: auth.credentials,
     ...rest,
-    headers: { ...(json !== undefined ? { 'Content-Type': 'application/json' } : {}), ...headers },
+    headers: { ...auth.headers, ...(json !== undefined ? { 'Content-Type': 'application/json' } : {}), ...headers },
     body: json !== undefined ? JSON.stringify(json) : rest.body,
   });
   watchFeatures(res);
@@ -50,7 +80,11 @@ export async function api<T = unknown>(path: string, init: RequestInit & { json?
   const data = text ? JSON.parse(text) : null;
   if (!res.ok) {
     if (res.status === 401 && typeof window !== 'undefined' && !path.startsWith('/auth/')) {
-      window.location.href = '/login';
+      if (loginAsToken()) {
+        // The "login as" session ended (2 hours, or the account changed): back to the admin's own app.
+        try { sessionStorage.removeItem(LOGIN_AS_KEY); } catch {}
+        window.location.href = '/';
+      } else window.location.href = '/login';
     }
     // The organization requires two-step sign-in and this person has not set it up yet.
     if (res.status === 403 && data?.code === 'MFA_SETUP_REQUIRED' && typeof window !== 'undefined' && window.location.pathname !== '/account/security') {

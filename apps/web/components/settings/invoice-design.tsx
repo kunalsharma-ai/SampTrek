@@ -3,7 +3,7 @@ import clsx from 'clsx';
 import { Eye, ImagePlus, Palette, Plus, Trash2, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { ErrorBox, Field, Loading, Section, Toggle } from '@/components/ui';
-import { API_URL, api, get } from '@/lib/api';
+import { API_URL, authInit, api, get } from '@/lib/api';
 
 export interface CustomField { label: string; value: string }
 export interface InvoiceTemplate { id: string; name: string; description: string; accent: string }
@@ -144,7 +144,7 @@ export function InvoiceDesignSettings({ isAdmin }: { isAdmin: boolean }) {
   async function preview() {
     setError(null);
     try {
-      const res = await fetch(`${API_URL}/api/v1/organization/invoice-design/preview`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(clean()) });
+      const res = await fetch(`${API_URL}/api/v1/organization/invoice-design/preview`, { method: 'POST', credentials: authInit().credentials, headers: { ...authInit().headers, 'Content-Type': 'application/json' }, body: JSON.stringify(clean()) });
       if (!res.ok) throw new Error((await res.json().catch(() => null))?.message ?? `Preview failed (${res.status})`);
       const url = URL.createObjectURL(await res.blob());
       window.open(url, '_blank', 'noopener');

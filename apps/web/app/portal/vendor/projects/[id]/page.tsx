@@ -1,9 +1,10 @@
 'use client';
 import clsx from 'clsx';
-import { ArrowLeft, Download, FileText } from 'lucide-react';
+import { ArrowLeft, Bell, Database, Download, FileText } from 'lucide-react';
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useParams, useSearchParams } from 'next/navigation';
+import { Suspense, useEffect, useRef, useState } from 'react';
+import { RespondentReport } from '@/components/project/vendor-report';
 import { NotesView } from '@/components/notes-view';
 import { PAYMENT_MODES } from '@/components/finance/bill-document';
 import { NoticeList, type Notice } from '@/components/portal/vendor-extras';
@@ -39,19 +40,33 @@ const date = (d: string | null) => (d ? new Date(d).toLocaleDateString(undefined
  * current and project LOI and IR, documents, quota notes, billing and chargebacks. Nothing about
  * security settings, the client or other vendors.
  */
-export default function VendorProjectPage() {
+export default function VendorProjectPageWrap() {
+  return <Suspense fallback={<Loading />}><VendorProjectPage /></Suspense>;
+}
+
+function VendorProjectPage() {
   const { id } = useParams<{ id: string }>();
   const [d, setD] = useState<Detail | null>(null);
   const [error, setError] = useState<unknown>(null);
+  // Feedback 2026-11-24: every number opens the respondents behind it, with search, paging and Excel.
+  const [report, setReport] = useState<{ status: string; title: string; search?: string } | null>(null);
+  // Opened from a notification: that update is shown first and highlighted.
+  const noticeId = useSearchParams().get('notice');
+  const updatesRef = useRef<HTMLDivElement>(null);
+  const [unreadAtOpen, setUnreadAtOpen] = useState<Set<string>>(new Set());
   useEffect(() => {
     get<Detail>(`/portal/vendor/projects/${id}`)
       .then((r) => {
         setD(r);
+        setUnreadAtOpen(new Set(r.notices.filter((n) => !n.readAt).map((n) => n.id)));
         const unread = r.notices.filter((n) => !n.readAt).map((n) => n.id);
         if (unread.length) post('/portal/vendor/notices/read', { ids: unread }).catch(() => {});
       })
       .catch(setError);
   }, [id]);
+  useEffect(() => {
+    if (d && noticeId) updatesRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  }, [d, noticeId]);
   if (!d) return error ? <ErrorBox error={error} /> : <Loading />;
 
   const ms = d.markets;
@@ -60,11 +75,11 @@ export default function VendorProjectPage() {
   const loiN = ms.filter((m) => m.avgLoi != null);
   const curLoi = loiN.length ? Math.round((loiN.reduce((s, m) => s + m.avgLoi! * m.completes, 0) / Math.max(1, sum(loiN, 'completes'))) * 10) / 10 : null;
   const curIr = completes + terms ? Math.round((completes / (completes + terms)) * 1000) / 10 : null;
-  const tiles: [string, string, string?][] = [
-    ['Clicks', sum(ms, 'clicks').toLocaleString()],
-    ['Completes', completes.toLocaleString(), `of ${sum(ms, 'targetCompletes').toLocaleString()} wanted`],
-    ['Over quota', sum(ms, 'overquota').toLocaleString()],
-    ['Terminates', terms.toLocaleString()],
+  const tiles: [string, string, string?, string?][] = [
+    ['Clicks', sum(ms, 'clicks').toLocaleString(), 'every entry', ''],
+    ['Completes', completes.toLocaleString(), `of ${sum(ms, 'targetCompletes').toLocaleString()} wanted`, 'COMPLETE'],
+    ['Over quota', sum(ms, 'overquota').toLocaleString(), undefined, 'QUOTA_FULL'],
+    ['Terminates', terms.toLocaleString(), undefined, 'TERMINATE'],
     ['LOI now', curLoi != null ? `${curLoi} min` : '–', `project ${avg(ms, 'projectLoi') ?? '–'} min`],
     ['IR now', curIr != null ? `${curIr}%` : '–', `project ${avg(ms, 'projectIr') ?? '–'}%`],
     ['Chargebacks', String(d.chargebacks.length), 'rejected completes'],
@@ -73,25 +88,34 @@ export default function VendorProjectPage() {
   return (
     <>
       <Link href="/portal/vendor" className="mb-3 inline-flex items-center gap-1.5 text-sm text-muted hover:text-ink"><ArrowLeft className="h-4 w-4" /> Projects</Link>
+      {d.notices.length > 0 && (
+        <div ref={updatesRef} className="scroll-mt-24">
+          <Section title={<span className="inline-flex items-center gap-2"><Bell className="h-4 w-4 text-brand" /> Updates from the team{unreadAtOpen.size > 0 && <span className="chip bg-brand/10 text-brand">{unreadAtOpen.size} new</span>}</span>} className="mb-6 border-brand/40">
+            <NoticeList items={d.notices.slice(0, noticeId || unreadAtOpen.size > 5 ? 20 : 5)} linkProjects={false} highlight={noticeId ?? undefined} fresh={unreadAtOpen} />
+          </Section>
+        </div>
+      )}
       <PageHeader title={d.project.name} subtitle={<span className="flex flex-wrap items-center gap-2"><span>{d.project.projectCode}</span><span>· {d.project.category}</span><StatusChip status={d.project.status} />{d.project.fieldEndAt && <span>· field ends {date(d.project.fieldEndAt)}</span>}</span>} />
 
       <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
-        {tiles.map(([l, v, sub]) => (
-          <div key={l} className="card p-4">
-            <div className="text-xs text-muted">{l}</div>
-            <div className="mt-1 text-xl font-semibold tabular-nums">{v}</div>
-            {sub && <div className="mt-0.5 text-xs text-muted">{sub}</div>}
-          </div>
-        ))}
+        {tiles.map(([l, v, sub, status]) =>
+          status !== undefined ? (
+            <button key={l} type="button" className="card p-4 text-left transition hover:border-brand/60 hover:shadow-md" onClick={() => setReport({ status, title: l })} title={`View and download the ${l.toLowerCase()}`}>
+              <div className="text-xs text-muted">{l}</div>
+              <div className="mt-1 text-xl font-semibold tabular-nums text-brand underline decoration-brand/30 underline-offset-4">{v}</div>
+              <div className="mt-0.5 text-xs text-muted">{sub ? `${sub} · ` : ''}view</div>
+            </button>
+          ) : (
+            <div key={l} className="card p-4">
+              <div className="text-xs text-muted">{l}</div>
+              <div className="mt-1 text-xl font-semibold tabular-nums">{v}</div>
+              {sub && <div className="mt-0.5 text-xs text-muted">{sub}</div>}
+            </div>
+          ),
+        )}
       </div>
 
-      {d.notices.length > 0 && (
-        <Section title="Updates from the team" className="mb-6">
-          <NoticeList items={d.notices.slice(0, 5)} linkProjects={false} />
-        </Section>
-      )}
-
-      <Section title="Your links and numbers" className="mb-6">
+      <Section title="Your links and numbers" className="mb-6" actions={<button className="btn-ghost px-2.5 py-1.5 text-xs" onClick={() => setReport({ status: '', title: 'All clicks' })}><Database className="h-3.5 w-3.5" /> View &amp; download</button>}>
         <div className="-mx-5 -mb-5 overflow-x-auto">
           <table className="w-full min-w-[1080px] text-sm">
             <thead className="border-y border-line bg-sunken/60">
@@ -102,11 +126,13 @@ export default function VendorProjectPage() {
                 <tr key={m.id}>
                   <td className="td whitespace-nowrap">{flag(m.countryCode)} {countryName(m.countryCode)}<span className="block text-xs text-muted">{m.language.toUpperCase()}{m.targetGroup ? ` · ${m.targetGroup}` : ''}</span></td>
                   <td className="td"><span className={clsx('chip', m.accepting ? 'bg-ok/15 text-ok' : 'bg-sunken text-muted')}>{m.accepting ? 'Accepting' : 'Not accepting'}</span></td>
-                  <td className="td"><Progress value={m.completes} max={m.targetCompletes} /></td>
+                  <td className="td"><button type="button" className="block w-full text-left" title="View these completes" onClick={() => setReport({ status: 'COMPLETE', title: `Completes · ${m.countryCode}`, search: m.countryCode })}><Progress value={m.completes} max={m.targetCompletes} /></button></td>
                   {!d.hidePayout && <td className="td text-right tabular-nums">{m.cpi != null ? money(m.cpi, m.currency) : '–'}</td>}
-                  <td className="td text-right tabular-nums">{m.clicks}</td>
-                  <td className="td text-right tabular-nums">{m.terminates}</td>
-                  <td className="td text-right tabular-nums">{m.overquota}</td>
+                  {([['clicks', '', 'Clicks'], ['terminates', 'TERMINATE', 'Terminates'], ['overquota', 'QUOTA_FULL', 'Over quota']] as const).map(([k, status, label]) => (
+                    <td key={k} className="td text-right tabular-nums">
+                      <button type="button" className="text-brand underline decoration-brand/30 underline-offset-4 hover:decoration-brand" title={`View ${label.toLowerCase()} in ${countryName(m.countryCode)}`} onClick={() => setReport({ status, title: `${label} · ${m.countryCode}`, search: m.countryCode })}>{m[k]}</button>
+                    </td>
+                  ))}
                   <td className="td whitespace-nowrap text-right tabular-nums">{m.avgLoi != null ? `${m.avgLoi}` : '–'} / {m.projectLoi} min</td>
                   <td className="td whitespace-nowrap text-right tabular-nums">{m.ir != null ? `${m.ir}%` : '–'} / {m.projectIr}%</td>
                   <td className="td text-right tabular-nums">{m.conversion != null ? `${m.conversion}%` : '–'}</td>
@@ -198,6 +224,7 @@ export default function VendorProjectPage() {
           {d.chargebacks.length > 0 && <p className="mt-6 text-xs text-muted">Think a rejection is wrong? <Link className="text-brand hover:underline" href="/portal/requests?new=dispute">Open a dispute</Link>.</p>}
         </Section>
       </div>
+      {report && <RespondentReport key={`${report.status}:${report.search ?? ''}`} projectId={d.project.id} projectCode={d.project.projectCode} title={report.title} status={report.status} search={report.search} vendorView endpoint={`/portal/vendor/projects/${d.project.id}/report`} onClose={() => setReport(null)} />}
     </>
   );
 }

@@ -515,8 +515,16 @@ export const HELP: Record<string, HelpEntry> = {
   'create.markets': {
     title: 'Target markets',
     what: 'Each market of the project: country + language + target group, with LOI, IR, client CPI and completes.',
-    how: 'Add rows, use Apply to all to copy a value to every market, or Paste from Excel.',
+    how: 'Add countries, then click a column heading (LOI, IR, CPI, Completes, Language, Target group) and type the value once to fill every market, or only the ticked ones. Change a single market in its row, or Paste from Excel.',
     where: 'Each row becomes one market of the project.',
+    example: 'Add US, Spain and Japan, click LOI, type 12, press OK: all three markets get 12 minutes.',
+  },
+  'create.links': {
+    title: 'Survey links',
+    what: 'Where respondents go after the gate: the client\'s live and test survey links.',
+    how: 'Tick “Use same link for all markets” when the client gave one link, and type it once. Otherwise type a link in each market. Tick “Use the live link as the test link” when the client gave one link for both.',
+    where: 'Every market of the new project. You can change links per market later on the project page.',
+    example: 'One link per country, no separate test link: leave “same link for all markets” off, paste each country\'s link, and tick “Use the live link as the test link”.',
   },
   'project.clientLinks.markets': { title: 'Markets', what: 'For each market: whether client unique links are on, and how many are unused or given out.', how: 'Turn a market on once its links are uploaded. Upload more when it says low.', where: 'This project.' },
   'project.clientLinks.upload': { title: 'Upload client links', what: 'Adds the client\'s per-respondent survey links to one market.', how: 'Choose the market, pick the file or paste the links, press Check links, then Add.', where: 'Only the chosen market. Repeats and lines that are not links are skipped.' },
