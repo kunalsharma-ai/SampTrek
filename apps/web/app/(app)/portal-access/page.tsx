@@ -1,6 +1,7 @@
 'use client';
 import { Eye, EyeOff, KeyRound, Plus, RefreshCw } from 'lucide-react';
 import { LoginAsButton } from '@/components/login-as-button';
+import { EditName } from '@/components/edit-name';
 import { useEffect, useState } from 'react';
 import { canEdit, useMe } from '@/components/me';
 import { Empty, ErrorBox, Field, Loading, PageHeader, Section, Toggle } from '@/components/ui';
@@ -54,6 +55,18 @@ export default function PortalAccessPage() {
     }
   }
 
+  const rename = (u: PortalUser) => async (name: string) => {
+    setError(null);
+    try {
+      await patch(`/portal-users/${u.id}`, { name });
+      setNote(`Name changed from “${u.name}” to “${name}”.`);
+      load();
+    } catch (e) {
+      setError(e);
+      throw e;
+    }
+  };
+
   if (!editable) return <Empty>Only admins and project managers can manage portal access.</Empty>;
   const parties = form.kind === 'client' ? clients : vendors;
 
@@ -96,7 +109,7 @@ export default function PortalAccessPage() {
             <tbody className="divide-y divide-line">
               {users.map((u) => (
                 <tr key={u.id} className={u.active ? undefined : 'opacity-60'}>
-                  <td className="td font-medium">{u.name}</td>
+                  <td className="td"><EditName name={u.name} onSave={rename(u)} /></td>
                   <td className="td">{u.email}</td>
                   <td className="td">{u.role === 'CLIENT_USER' ? 'Client' : 'Vendor'}</td>
                   <td className="td">{u.client?.name ?? u.vendor?.name}</td>

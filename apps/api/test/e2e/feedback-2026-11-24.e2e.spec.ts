@@ -67,6 +67,21 @@ describe('Feedback 2026-11-24 (e2e)', () => {
       await prisma.user.update({ where: { id: vendorUserId }, data: { passwordHash: (await prisma.user.findFirstOrThrow({ where: { id: users.VIEWER.id } })).passwordHash } });
     });
 
+    it('corrects a misspelt name of a team member or portal login, with the old name in the audit log', async () => {
+      await admin.patch(`/team/${users.VIEWER.id}`, { name: '  Viewer Fixed ' }).expect(200);
+      expect((await prisma.user.findFirstOrThrow({ where: { id: users.VIEWER.id } })).name).toBe('Viewer Fixed');
+      await admin.patch(`/team/${users.VIEWER.id}`, { name: '' }).expect(400);
+      await pm.patch(`/team/${users.VIEWER.id}`, { name: 'Nope' }).expect(403);
+      await pm.patch(`/portal-users/${vendorUserId}`, { name: 'A. User' }).expect(200);
+      const v = await prisma.user.findFirstOrThrow({ where: { id: vendorUserId } });
+      expect([v.name, v.active]).toEqual(['A. User', true]);
+      const ev = await prisma.auditEvent.findFirstOrThrow({ where: { organizationId: org, action: 'portal-user.rename', entityId: vendorUserId } });
+      expect(ev.detail).toMatchObject({ name: 'A. User', previous: 'A user' });
+      await pm.patch(`/portal-users/${vendorUserId}`, {}).expect(400);
+      await pm.patch(`/portal-users/${users.VIEWER.id}`, { name: 'x' }).expect(404);
+      expect((await admin.get('/team').expect(200)).body.users.find((x: { id: string }) => x.id === users.VIEWER.id).name).toBe('Viewer Fixed');
+    });
+
     it('lets an admin open a vendor login in its own session, once, and logs it', async () => {
       await pm.post(`/auth/login-as/${vendorUserId}`).expect(403);
       const t = (await admin.post(`/auth/login-as/${vendorUserId}`).expect(200)).body;
