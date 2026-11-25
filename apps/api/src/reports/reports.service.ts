@@ -204,8 +204,23 @@ export class ReportsService {
     return m;
   }
 
-  /** Sessions grouped by project, market, vendor link and (for time groupings) calendar bucket. */
-  private async partials(org: string, f: ReportFilter, groupBy: GroupBy | null) {
+  /**
+   * Sessions grouped by project, market, vendor link and (for time groupings) calendar bucket.
+   * Groupings by vendor, project or client (and none) read the same groups, so the same request
+   * made at the same time (the dashboard asks for all four at once) runs once: load test 2026-11-25.
+   */
+  private partials(org: string, f: ReportFilter, groupBy: GroupBy | null): Promise<Partial0[]> {
+    const time = groupBy === 'day' || groupBy === 'week' || groupBy === 'month' ? groupBy : null;
+    const key = JSON.stringify([org, f, time]);
+    const running = this.inFlight.get(key);
+    if (running) return running;
+    const p = this.partialsNow(org, f, time).finally(() => this.inFlight.delete(key));
+    this.inFlight.set(key, p);
+    return p;
+  }
+  private readonly inFlight = new Map<string, Promise<Partial0[]>>();
+
+  private async partialsNow(org: string, f: ReportFilter, groupBy: GroupBy | null) {
     const m = await this.match(org, f);
     if (!m) return [];
     const st = (x: string) => ({ $eq: ['$status', x] });
