@@ -3,7 +3,8 @@ import { Copyable } from '@/components/copy';
 import clsx from 'clsx';
 import { Download } from 'lucide-react';
 import Link from 'next/link';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { VendorBills } from '@/components/finance/vendor-bills';
 import { PortalStatement, VendorNotices } from '@/components/portal/vendor-extras';
 import { CopyButton } from '@/components/project/vendors-tab';
@@ -42,7 +43,11 @@ interface Callback { id: string; url: string; state: string; attempts: number; l
 
 const TABS = ['Projects', 'Notifications', 'Respondents', 'Callbacks', 'Statements'] as const;
 
-export default function VendorPortal() {
+export default function VendorPortalWrap() {
+  return <Suspense fallback={<Loading />}><VendorPortal /></Suspense>;
+}
+
+function VendorPortal() {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [allocs, setAllocs] = useState<Allocation[] | null>(null);
   const [projects, setProjects] = useState<ProjectRow[] | null>(null);
@@ -50,6 +55,12 @@ export default function VendorPortal() {
   const [sessions, setSessions] = useState<SessionRow[] | null>(null);
   const [callbacks, setCallbacks] = useState<Callback[] | null>(null);
   const [tab, setTab] = useState<(typeof TABS)[number]>('Projects');
+  // The bell's "See all notifications" opens that tab (feedback 2026-11-24).
+  const tabParam = useSearchParams().get('tab');
+  useEffect(() => {
+    const t = TABS.find((x) => x.toLowerCase() === tabParam?.toLowerCase());
+    if (t) setTab(t);
+  }, [tabParam]);
   const [allocFilter, setAllocFilter] = useState('');
   const [error, setError] = useState<unknown>(null);
   const [disputable, setDisputable] = useState(0);

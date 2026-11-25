@@ -44,6 +44,8 @@ export interface Me {
   tour?: { version: number; show: boolean; outcome: 'completed' | 'skipped' | null; at: string | null };
   /** The Super Admin is looking at this organisation read-only (docs/SUPER_ADMIN_OBSERVE.md). */
   observing?: { organizationId: string; name: string; homeOrganizationId: string } | null;
+  /** An admin opened this tab with "Login as" (feedback 2026-11-24). */
+  loginAs?: { by: { id: string; name: string } } | null;
 
   /** Super Admin switches (docs/SUPER_ADMIN.md). */
   features?: Features;
@@ -112,7 +114,10 @@ export interface Question {
   rows?: { id: string; label: string }[];
   validation: { min?: number; max?: number; integer?: boolean; minSelect?: number; maxSelect?: number; minLength?: number; maxLength?: number; format?: TextFormat };
   qualify?: { min?: number; max?: number };
+  /** By market language code: the question as respondents of that market see it (feedback 2026-11-24). */
+  translations?: Record<string, QuestionTranslation>;
 }
+export interface QuestionTranslation { text?: string; help?: string; options?: Record<string, string>; rows?: Record<string, string> }
 
 export const QUESTION_TYPE_LABELS: Record<QuestionType, string> = {
   single: 'Single choice',

@@ -8,7 +8,7 @@
  * the client CPI, other vendors or any security setting. It also has a notices list: quota changes
  * staff made, with the time (src/portal/vendor-notices.ts).
  */
-import { Body, Controller, ForbiddenException, Get, HttpCode, NotFoundException, Param, Post } from '@nestjs/common';
+import { Body, Controller, ForbiddenException, Get, HttpCode, NotFoundException, Param, Post, Query } from '@nestjs/common';
 import { z } from 'zod';
 import { CurrentUser, Roles } from '../auth/decorators';
 import { AuthUser } from '../auth/auth.types';
@@ -17,6 +17,7 @@ import { forVendor } from '../common/vendor-safe';
 import { ZodPipe } from '../common/zod.pipe';
 import { SPEEDER_DETAIL } from '../projects/field-metrics';
 import { entryQuery } from '../projects/markets';
+import { vendorReport, vendorReportQuery } from '../projects/vendor-report';
 import { PrismaService } from '../prisma/prisma.service';
 
 const VISIBLE = ['TEST', 'LIVE', 'HOLD', 'CLOSED', 'INVOICED'] as const;
@@ -182,6 +183,25 @@ export class VendorProjectsController {
       billing: [...billing.values()].map((b) => ({ number: b.bill?.number ?? null, status: b.bill ? b.bill.status : 'NOT_BILLED', currency: b.currency, completes: b.completes, amount: hide ? null : b.amount, dueAt: b.bill?.dueAt ?? null, paidAt: b.bill?.paidAt ?? null, paymentMode: b.bill?.paymentMode ?? null })),
       chargebacks: chargebacks.map((s) => ({ id: s.id, uid: s.vendorRespondentId, countryCode: s.projectCountry.countryCode, completedAt: s.outcomeAt, rejectedAt: s.approvalAt, payout: hide ? null : s.payout == null ? null : Number(s.payout), currency: s.projectCountry.currency })),
       notices,
+    };
+  }
+
+  /**
+   * The respondents behind a number on the project page (feedback 2026-11-24): clicks (every entry),
+   * completes, terminates or over quota, paged with search, and every row for the Excel download.
+   * Only this vendor's own respondents; no IP, gate answers or security reasons.
+   */
+  @Get('projects/:id/report')
+  async report(@CurrentUser() u: AuthUser, @Param('id') id: string, @Query(new ZodPipe(vendorReportQuery)) q: z.infer<typeof vendorReportQuery>) {
+    const v = await this.vendor(u);
+    const own = await this.prisma.project.findFirst({ where: { id, organizationId: u.organizationId, status: { in: [...VISIBLE] }, countries: { some: { allocations: { some: { vendorId: v.id } } } } }, select: { id: true } });
+    if (!own) throw new NotFoundException('Project not found');
+    const r = await vendorReport(this.prisma, u.organizationId, id, v.id, { ...q, includeTest: 'false' });
+    return {
+      total: r.total,
+      vendor: { name: v.name, code: v.code },
+      gateQuestions: [],
+      rows: r.rows.map((x) => ({ uid: x.uid, respondentId: x.respondentId, vendor: '', country: x.country, targetGroup: x.targetGroup, ipId: null, device: x.device, loiMinutes: x.loiMinutes, status: x.status, statusDetail: null, approval: x.approval, test: false, gate: {}, startedAt: x.startedAt, endedAt: x.endedAt })),
     };
   }
 

@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { canEdit, useMe } from '@/components/me';
 import { ErrorBox, Loading, OutcomeChip, Section, Toggle } from '@/components/ui';
-import { API_URL, ApiError, get, patch, post } from '@/lib/api';
+import { API_URL, authInit, ApiError, get, patch, post } from '@/lib/api';
 import { downloadFile } from '@/lib/download';
 import { flag } from '@/lib/countries';
 import { FILE_ACCEPT, fileSize, KIND_LABEL, PORTAL_STATUS_LABEL, RequestFull, RequestStatus, STATUS_LABEL, STATUS_TONE } from './types';
@@ -62,7 +62,7 @@ export function RequestThread({ id, portal }: { id: string; portal: boolean }) {
       const form = new FormData();
       form.append('file', file);
       form.append('ticketId', id);
-      const res = await fetch(`${API_URL}/api/v1${fileBase}`, { method: 'POST', credentials: 'include', body: form });
+      const res = await fetch(`${API_URL}/api/v1${fileBase}`, { method: 'POST', ...authInit(), body: form });
       if (!res.ok) {
         const b = await res.json().catch(() => null);
         throw new ApiError(res.status, res.status === 413 ? 'Files can be up to 10 MB' : b?.message ?? 'Upload failed');

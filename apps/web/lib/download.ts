@@ -1,8 +1,8 @@
-import { API_URL } from './api';
+import { API_URL, authInit } from './api';
 
 /** Downloads a file from the API with the session cookie and saves it under the server's file name. */
 export async function downloadFile(path: string, fallbackName: string) {
-  const res = await fetch(`${API_URL}/api/v1${path}`, { credentials: 'include' });
+  const res = await fetch(`${API_URL}/api/v1${path}`, authInit());
   if (!res.ok) {
     const body = await res.json().catch(() => null);
     throw new Error(body?.message ? (Array.isArray(body.message) ? body.message.join(', ') : body.message) : `Download failed (${res.status})`);

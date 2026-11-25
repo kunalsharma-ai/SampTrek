@@ -6,6 +6,7 @@ import { useMe } from '@/components/me';
 import { Empty, ErrorBox, Loading, PageHeader, Section, Toggle } from '@/components/ui';
 import { api, get, post } from '@/lib/api';
 import { InfoTip, Label } from '@/components/help';
+import { LoginAsButton } from '@/components/login-as-button';
 
 type Role = 'ADMIN' | 'PROJECT_MANAGER' | 'SALES' | 'VIEWER';
 interface Member { id: string; name: string; email: string; role: Role; active: boolean; status: 'active' | 'invited' | 'deactivated'; inviteExpiresAt: string | null; lastLoginAt: string | null; mfaEnabled: boolean; sso: string[]; isYou: boolean; canDeleteProjects?: boolean }
@@ -117,6 +118,7 @@ export default function TeamPage() {
                         {m.active ? (
                           <>
                             <button className="btn-ghost px-2.5 py-1 text-xs" onClick={() => link(m)}>{m.status === 'invited' ? 'Resend invite' : 'Send reset link'}</button>
+                            {!m.isYou && m.status === 'active' && (m.role !== 'ADMIN' || (me?.user as { superAdmin?: boolean } | undefined)?.superAdmin) && <LoginAsButton userId={m.id} name={m.name} onError={setError} />}
                             {!m.isYou && <button className="btn-ghost px-2.5 py-1 text-xs" title="Sign out everywhere" aria-label={`Sign ${m.name} out everywhere`} onClick={() => signOut(m)}><LogOut className="h-3.5 w-3.5" /></button>}
                             {!m.isYou && <button className="btn-danger px-2.5 py-1 text-xs" onClick={() => patch(m, { active: false }, `Deactivate ${m.name}? They are signed out at once and cannot sign in. Their projects and history stay.`)}>Deactivate</button>}
                           </>

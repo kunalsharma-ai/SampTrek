@@ -7,7 +7,7 @@ import { LedgerSync } from '@/components/finance/ledger-sync';
 import { ZohoBooksSync } from '@/components/finance/zoho-books-sync';
 import { canEdit, useMe } from '@/components/me';
 import { Empty, ErrorBox, Loading, PageHeader, Section, Toggle } from '@/components/ui';
-import { API_URL, ApiError, get, post } from '@/lib/api';
+import { API_URL, authInit, ApiError, get, post } from '@/lib/api';
 import { Label } from '@/components/help';
 
 type Kind = 'invoices' | 'bills' | 'both' | 'payments_received' | 'payments_made';
@@ -35,7 +35,7 @@ function lastMonth() {
 }
 
 async function download(id: string, name: string) {
-  const res = await fetch(`${API_URL}/api/v1/accounting/exports/${id}/download`, { credentials: 'include' });
+  const res = await fetch(`${API_URL}/api/v1/accounting/exports/${id}/download`, { ...authInit() });
   if (!res.ok) throw new ApiError(res.status, 'Download failed');
   const url = URL.createObjectURL(await res.blob());
   const a = document.createElement('a');

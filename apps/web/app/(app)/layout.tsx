@@ -1,4 +1,5 @@
 'use client';
+import { LoginAsBanner } from '@/components/login-as-banner';
 import clsx from 'clsx';
 import { Bell, Compass, Eye, LogOut, Maximize2, Menu, Palette, PanelRight, Plus, Search, Settings, ShieldCheck, Sparkles, X } from 'lucide-react';
 import Link from 'next/link';
@@ -18,7 +19,7 @@ import { ThemeMenu } from '@/components/shell/theme-menu';
 import { LanguageMenu, useLanguagesAllowed } from '@/components/i18n';
 import { useTheme } from '@/components/theme';
 import { Loading } from '@/components/ui';
-import { FEATURES_EVENT, get, post } from '@/lib/api';
+import { endLoginAs, FEATURES_EVENT, get, post } from '@/lib/api';
 import { PlanBlocked, FeatureOff } from '@/components/super-admin/plan-gate';
 import { applyDocumentBrand, orgTheme } from '@/lib/branding';
 import { hasFeature, isPortalRole, portalHome, type Features, type Me } from '@/lib/types';
@@ -261,7 +262,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                     <Link href="/settings/appearance" onClick={close} className="flex items-center gap-2 rounded-md px-3 py-2 hover:bg-sunken"><Palette className="h-4 w-4 text-muted" /> Theme Studio</Link>
                     <Link href="/settings" onClick={close} className="flex items-center gap-2 rounded-md px-3 py-2 hover:bg-sunken"><Settings className="h-4 w-4 text-muted" /> Organization settings</Link>
                     <button onClick={() => { close(); startTour(); }} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left hover:bg-sunken"><Compass className="h-4 w-4 text-muted" /> Take the product tour</button>
-                    <button onClick={async () => { await post('/auth/logout'); clearChatCache(me.user.id); router.replace('/login'); }} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left hover:bg-sunken"><LogOut className="h-4 w-4 text-muted" /> Sign out</button>
+                    <button onClick={async () => { if (me.loginAs) { clearChatCache(me.user.id); return endLoginAs(); } await post('/auth/logout'); clearChatCache(me.user.id); router.replace('/login'); }} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left hover:bg-sunken"><LogOut className="h-4 w-4 text-muted" /> Sign out</button>
                   </div>
                 )}
               </Popover>
@@ -271,6 +272,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
           <div className="flex min-h-0 flex-1">
             <main id="main" key={pathname} className="anim-in mx-auto w-full min-w-0 max-w-[1440px] px-4 py-6 sm:px-6">
+              {me.loginAs && <LoginAsBanner name={me.user.name} by={me.loginAs.by.name} />}
               {me.observing && (
                 <div className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-warn/40 bg-warn/10 px-4 py-2.5 text-sm" role="status" data-observing>
                   <Eye className="h-4 w-4 shrink-0 text-warn" />

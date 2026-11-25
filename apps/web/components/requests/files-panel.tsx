@@ -3,7 +3,7 @@ import clsx from 'clsx';
 import { Download, FileText, Trash2, Upload } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Empty, ErrorBox, Field, Loading } from '@/components/ui';
-import { API_URL, ApiError, api, get } from '@/lib/api';
+import { API_URL, authInit, ApiError, api, get } from '@/lib/api';
 import { downloadFile } from '@/lib/download';
 import { FILE_ACCEPT, FILE_KIND_LABEL, FileKind, fileSize, SharedFile } from './types';
 
@@ -75,7 +75,7 @@ export function FilesPanel({
       if (projectId) form.append('projectId', projectId);
       if (note.trim()) form.append('note', note.trim());
       if (kind === 'COMPLIANCE' && expiresAt) form.append('expiresAt', new Date(`${expiresAt}T23:59:59`).toISOString());
-      const res = await fetch(`${API_URL}/api/v1${base}`, { method: 'POST', credentials: 'include', body: form });
+      const res = await fetch(`${API_URL}/api/v1${base}`, { method: 'POST', ...authInit(), body: form });
       if (!res.ok) {
         const body = await res.json().catch(() => null);
         throw new ApiError(res.status, res.status === 413 ? 'Files can be up to 10 MB' : body?.message ?? `Upload failed (${res.status})`);

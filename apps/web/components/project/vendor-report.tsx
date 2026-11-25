@@ -1,12 +1,13 @@
 'use client';
 import clsx from 'clsx';
-import { ChevronLeft, ChevronRight, Columns3, Download, Search, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Columns3, Download, FileSpreadsheet, Search, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ErrorBox, Loading, OutcomeChip } from '@/components/ui';
 import { get } from '@/lib/api';
 import { countryName, flag } from '@/lib/countries';
 import { downloadCsv } from '@/lib/csv';
+import { downloadXlsx } from '@/lib/xlsx';
 
 interface Row {
   uid: string;
@@ -78,12 +79,26 @@ export const STATUS_FILTERS: { value: string; label: string }[] = [
  * Respondents of a project, for one vendor (View report) or every vendor (status cards, View data),
  * optionally one outcome. Same table, paging, field chooser and download for both.
  */
-export function RespondentReport({ projectId, projectCode, vendorId, title, status: initialStatus = '', onClose }: { projectId: string; projectCode: string; vendorId?: string; title: string; status?: string; onClose: () => void }) {
+/** What a vendor may filter on in its own portal (no security details). */
+export const VENDOR_STATUS_FILTERS: { value: string; label: string }[] = [
+  { value: '', label: 'All clicks' },
+  { value: 'COMPLETE', label: 'Completes' },
+  { value: 'TERMINATE', label: 'Terminates' },
+  { value: 'QUOTA_FULL', label: 'Over quota' },
+  { value: 'STARTED', label: 'In progress' },
+  { value: 'QUALITY', label: 'Quality and security' },
+  { value: 'PARTIAL', label: 'Dropouts (partial)' },
+];
+/** Columns a vendor sees for its own respondents. */
+const VENDOR_COLS = new Set(['uid', 'respondentId', 'country', 'targetGroup', 'loi', 'status', 'device', 'startedAt', 'endedAt']);
+
+export function RespondentReport({ projectId, projectCode, vendorId, title, status: initialStatus = '', onClose, endpoint, vendorView = false, search: initialSearch = '' }: { projectId: string; projectCode: string; vendorId?: string; title: string; status?: string; onClose: () => void; /** Another API path with the same answer (the vendor portal). */ endpoint?: string; /** Vendor portal: only the vendor-safe columns and filters, no test entries. */ vendorView?: boolean; /** Starts with this search, e.g. a market's country code. */ search?: string }) {
+  const filters = vendorView ? VENDOR_STATUS_FILTERS : STATUS_FILTERS;
   const [status, setStatus] = useState(initialStatus);
   const [take, setTake] = useState(10);
   const [page, setPage] = useState(0);
-  const [q, setQ] = useState('');
-  const [search, setSearch] = useState('');
+  const [q, setQ] = useState(initialSearch);
+  const [search, setSearch] = useState(initialSearch);
   const [includeTest, setIncludeTest] = useState(false);
   const [data, setData] = useState<Report | null>(null);
   const [error, setError] = useState<unknown>(null);
@@ -98,7 +113,7 @@ export function RespondentReport({ projectId, projectCode, vendorId, title, stat
     return () => clearTimeout(t);
   }, [q]);
   const params = (extra: Record<string, string>) => new URLSearchParams({ ...(search ? { q: search } : {}), ...(includeTest ? { includeTest: 'true' } : {}), ...(status ? { status } : {}), ...extra }).toString();
-  const base = vendorId ? `/projects/${projectId}/vendors/${vendorId}/report` : `/projects/${projectId}/report`;
+  const base = endpoint ?? (vendorId ? `/projects/${projectId}/vendors/${vendorId}/report` : `/projects/${projectId}/report`);
   useEffect(() => {
     setError(null);
     get<Report>(`${base}?${params({ skip: String(page * take), take: String(take) })}`).then(setData).catch(setError);
@@ -116,17 +131,22 @@ export function RespondentReport({ projectId, projectCode, vendorId, title, stat
     const gate: Col[] = (data?.gateQuestions ?? []).map((g) => ({ key: `gate:${g.id}`, label: `Gate: ${g.text}`, text: (r) => r.gate[g.id] ?? '' }));
     // Gate answers go before the times, as in the feedback's column list.
     const at = BASE_COLS.findIndex((c) => c.key === 'startedAt');
-    return [...BASE_COLS.slice(0, at), ...gate, ...BASE_COLS.slice(at)];
-  }, [data?.gateQuestions]);
+    const all = [...BASE_COLS.slice(0, at), ...gate, ...BASE_COLS.slice(at)];
+    return vendorView ? all.filter((c) => VENDOR_COLS.has(c.key)) : all;
+  }, [data?.gateQuestions, vendorView]);
   const shown = cols.filter((c) => !hidden.has(c.key));
   const pages = data ? Math.max(1, Math.ceil(data.total / take)) : 1;
 
-  async function download() {
+  async function download(type: 'csv' | 'xlsx' = 'csv') {
     setBusy(true);
     setError(null);
     try {
       const all = await get<Report>(`${base}?${params({ all: 'true' })}`);
-      downloadCsv(`${projectCode}-${title.replace(/[^\w-]+/g, '_')}${status ? `-${status.toLowerCase()}` : ''}-report.csv`, shown.map((c) => c.label), all.rows.map((r) => shown.map((c) => c.text(r))));
+      const name = `${projectCode}-${title.replace(/[^\w-]+/g, '_')}${status ? `-${status.toLowerCase()}` : ''}-report`;
+      const header = shown.map((c) => c.label);
+      const rows = all.rows.map((r) => shown.map((c) => c.text(r)));
+      if (type === 'xlsx') downloadXlsx(`${name}.xlsx`, [header, ...rows], 'Respondents');
+      else downloadCsv(`${name}.csv`, header, rows);
     } catch (e) {
       setError(e);
     } finally {
@@ -138,24 +158,24 @@ export function RespondentReport({ projectId, projectCode, vendorId, title, stat
     <div className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-black/40 p-3 backdrop-blur-sm sm:p-6" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div role="dialog" aria-modal="true" aria-labelledby="vendor-report-title" className="card w-full max-w-6xl">
         <div className="flex items-center justify-between gap-3 border-b border-line px-5 py-3">
-          <h2 id="vendor-report-title" className="text-base font-semibold">Report · {title}{status ? ` · ${STATUS_FILTERS.find((f) => f.value === status)?.label ?? status}` : ''}{data && <span className="font-normal text-muted"> · {data.total.toLocaleString()} {data.total === 1 ? 'respondent' : 'respondents'}</span>}</h2>
+          <h2 id="vendor-report-title" className="text-base font-semibold">Report · {title}{status ? ` · ${filters.find((f) => f.value === status)?.label ?? status}` : ''}{data && <span className="font-normal text-muted"> · {data.total.toLocaleString()} {data.total === 1 ? 'respondent' : 'respondents'}</span>}</h2>
           <button className="btn-ghost p-1.5" aria-label="Close" onClick={onClose}><X className="h-4 w-4" /></button>
         </div>
         <div className="flex flex-wrap items-center gap-2 border-b border-line px-5 py-3">
           <label className="relative min-w-[200px] flex-1">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" aria-hidden />
-            <input className="input pl-8" placeholder="Search UID, respondent ID, country code, target group, reason" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search the report" />
+            <input className="input pl-8" placeholder={vendorView ? 'Search your respondent ID, UID, country code, target group' : 'Search UID, respondent ID, country code, target group, reason'} value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search the report" />
           </label>
           <label className="flex items-center gap-2 text-xs text-muted">
             Show
             <select className="input w-auto py-1.5" value={take} onChange={(e) => { setTake(Number(e.target.value)); setPage(0); }} aria-label="Entries per page">
-              {[10, 25, 100].map((n) => <option key={n} value={n}>{n} entries</option>)}
+              {[10, 25, 50, 100].map((n) => <option key={n} value={n}>{n} entries</option>)}
             </select>
           </label>
           <select className="input w-auto py-1.5 text-xs" value={status} onChange={(e) => { setStatus(e.target.value); setPage(0); }} aria-label="Outcome">
-            {STATUS_FILTERS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
+            {filters.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
           </select>
-          <label className="flex items-center gap-1.5 text-xs text-muted"><input type="checkbox" checked={includeTest} onChange={(e) => { setIncludeTest(e.target.checked); setPage(0); }} /> Test entries</label>
+          {!vendorView && <label className="flex items-center gap-1.5 text-xs text-muted"><input type="checkbox" checked={includeTest} onChange={(e) => { setIncludeTest(e.target.checked); setPage(0); }} /> Test entries</label>}
           <div className="relative" ref={chooserRef}>
             <button className="btn-ghost px-2.5 py-1.5 text-xs" aria-expanded={chooser} onClick={() => setChooser(!chooser)}><Columns3 className="h-3.5 w-3.5" /> Fields ({shown.length}/{cols.length})</button>
             {chooser && (
@@ -170,7 +190,8 @@ export function RespondentReport({ projectId, projectCode, vendorId, title, stat
               </div>
             )}
           </div>
-          <button className="btn-ghost px-2.5 py-1.5 text-xs" disabled={busy || !data?.total} onClick={download}><Download className="h-3.5 w-3.5" /> {busy ? 'Preparing…' : 'Download CSV'}</button>
+          <button className="btn-ghost px-2.5 py-1.5 text-xs" disabled={busy || !data?.total} onClick={() => download('xlsx')}><FileSpreadsheet className="h-3.5 w-3.5" /> {busy ? 'Preparing…' : 'Excel'}</button>
+          <button className="btn-ghost px-2.5 py-1.5 text-xs" disabled={busy || !data?.total} onClick={() => download('csv')}><Download className="h-3.5 w-3.5" /> CSV</button>
         </div>
         <div className="px-5 pt-3"><ErrorBox error={error} /></div>
         {!data ? (

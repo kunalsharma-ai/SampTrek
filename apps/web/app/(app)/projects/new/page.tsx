@@ -8,6 +8,7 @@ import { DateRangePicker } from '@/components/form/date';
 import { Combobox, CountrySelect, CurrencySelect } from '@/components/form/combobox';
 import { AddableSelect, loadCustomOptions } from '@/components/form/option-select';
 import { BulkFill } from '@/components/project/bulk-fill';
+import { ColumnFill } from '@/components/project/column-fill';
 import { cleanQuestion, QuestionBuilder, questionProblems } from '@/components/project/question-builder';
 import type { QuestionSetInfo } from '@/components/project/question-sets';
 import { BriefBanner, BriefReader, useBriefAvailability, type BriefInfo } from '@/components/project/brief-reader';
@@ -39,6 +40,8 @@ interface CountryRow {
   targetCompletes: Num;
   liveSurveyUrl: string;
   testSurveyUrl?: string;
+  /** The client gave one link for both: the test link is the live link (feedback 2026-11-24). */
+  testSameAsLive?: boolean;
 }
 
 /** A vendor added to every market on create; the payout is per complete in the project currency. */
@@ -57,7 +60,7 @@ const num = (v: string): Num => (v === '' ? '' : Number(v));
 const opt = (v: number | string | undefined | null): Num => (v === undefined || v === null || v === '' ? '' : Number(v));
 
 interface DraftRow { id: string; title: string; updatedAt: string }
-interface DraftData { info: typeof EMPTY_INFO; devices: DeviceSettings; security: Record<string, boolean>; mode: RedirectMode; shared: typeof SHARED_DEFAULTS; rows: CountryRow[]; templateId: string | null; wonBidId: string | null; brief?: BriefInfo | null; currency?: string; vendors?: VendorRow[]; gateQuestions?: Question[] }
+interface DraftData { info: typeof EMPTY_INFO; devices: DeviceSettings; security: Record<string, boolean>; mode: RedirectMode; shared: typeof SHARED_DEFAULTS; rows: CountryRow[]; templateId: string | null; wonBidId: string | null; brief?: BriefInfo | null; currency?: string; vendors?: VendorRow[]; gateQuestions?: Question[]; sameLink?: boolean; sharedTestSame?: boolean }
 const sameMarket = (a: CountryRow, b: CountryRow, sharedGroup: string) =>
   a.countryCode === b.countryCode && a.language.toLowerCase() === b.language.toLowerCase() && (a.targetGroup || sharedGroup).trim().toLowerCase() === (b.targetGroup || sharedGroup).trim().toLowerCase();
 const EMPTY_INFO = { name: '', workOrderNo: '', generateWorkOrder: true, type: 'AD_HOC', category: '', clientId: '', clientContactId: '', salesPersonId: '', projectManagerId: '', description: '', bidReference: '', fieldStartAt: '', fieldEndAt: '' };
@@ -101,6 +104,9 @@ function CreateProjectPage() {
   const [mode, setMode] = useState<RedirectMode>('HYBRID');
   const [shared, setShared] = useState(SHARED_DEFAULTS);
   const [rows, setRows] = useState<CountryRow[]>([]);
+  // Feedback 2026-11-24: one link for every market, and the test link the same as the live link.
+  const [sameLink, setSameLink] = useState(false);
+  const [sharedTestSame, setSharedTestSame] = useState(false);
   const [currency, setCurrency] = useState('USD');
   const [vendorOpts, setVendorOpts] = useState<VendorOpt[]>([]);
   const [numbering, setNumbering] = useState<{ nextWorkOrderNo: string; lastWorkOrderNo: string | null } | null>(null);
@@ -184,6 +190,7 @@ function CreateProjectPage() {
       setSecurity(f.security);
       setMode(f.redirectMode as RedirectMode);
       setShared({ targetGroup: d.targetGroup ?? '', loiMinutes: opt(d.loiMinutes), irPercent: opt(d.irPercent), cpi: opt(d.cpi), targetCompletes: opt(d.targetCompletes), liveSurveyUrl: d.liveSurveyUrl ?? '', testSurveyUrl: d.testSurveyUrl ?? '' });
+      setSameLink(!!d.liveSurveyUrl);
       setRows(
         f.countries.map((c) => ({
           ...blankRow(c.countryCode),
@@ -218,6 +225,8 @@ function CreateProjectPage() {
       if (x.security) setSecurity(x.security);
       if (x.mode) setMode(x.mode);
       setShared({ ...SHARED_DEFAULTS, ...x.shared });
+      setSameLink(x.sameLink ?? !!x.shared?.liveSurveyUrl);
+      setSharedTestSame(!!x.sharedTestSame);
       setRows(x.rows ?? []);
       if (x.currency) setCurrency(x.currency);
       if (x.vendors) setVendors(x.vendors);
@@ -274,7 +283,7 @@ function CreateProjectPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [info.category, currency]);
 
-  const draftData: DraftData = { info, devices, security, mode, shared, rows, templateId: template?.id ?? null, wonBidId: wonBid?.status === 'NEW' ? wonBid.id : null, brief, currency, vendors, gateQuestions };
+  const draftData: DraftData = { info, devices, security, mode, shared, rows, templateId: template?.id ?? null, wonBidId: wonBid?.status === 'NEW' ? wonBid.id : null, brief, currency, vendors, gateQuestions, sameLink, sharedTestSame };
   const draftJson = JSON.stringify(draftData);
   useEffect(() => {
     if (!ready.current || busy) return;
@@ -347,14 +356,19 @@ function CreateProjectPage() {
   const setRow = (i: number, patch: Partial<CountryRow>) => setRows((rs) => rs.map((r, n) => (n === i ? { ...r, ...patch } : r)));
   const addCountry = (code: string | null) => {
     if (!code) return;
-    setRows((rs) => [...rs, blankRow(code)]);
+    // A new market starts with the numbers of the last one (or the usual defaults), ready to change.
+    setRows((rs) => {
+      const last = rs[rs.length - 1];
+      const r = blankRow(code);
+      return [...rs, { ...r, loiMinutes: last ? last.loiMinutes : shared.loiMinutes, irPercent: last ? last.irPercent : shared.irPercent, cpi: last ? last.cpi : shared.cpi, targetCompletes: last ? last.targetCompletes : shared.targetCompletes, testSameAsLive: last?.testSameAsLive }];
+    });
   };
   const removeRows = (idx: number[]) => {
     setRows((rs) => rs.filter((_, n) => !idx.includes(n)));
     setSelected([]);
   };
   // The same country may be added again for another target group; the exact same market twice is flagged.
-  const linkProblem = [shared.liveSurveyUrl, shared.testSurveyUrl, ...rows.flatMap((r) => [r.liveSurveyUrl, r.testSurveyUrl])].map(surveyLinkProblem).find(Boolean) ?? null;
+  const linkProblem = (sameLink ? [shared.liveSurveyUrl, sharedTestSame ? '' : shared.testSurveyUrl] : rows.flatMap((r) => [r.liveSurveyUrl, r.testSameAsLive ? '' : r.testSurveyUrl])).map(surveyLinkProblem).find(Boolean) ?? null;
   const duplicates = useMemo(() => new Set(rows.flatMap((r, i) => (rows.some((o, j) => j !== i && sameMarket(r, o, shared.targetGroup)) ? [i] : []))), [rows, shared.targetGroup]);
   const visible = useMemo(() => {
     const q = filter.trim().toLowerCase();
@@ -424,8 +438,8 @@ function CreateProjectPage() {
         security,
         redirectMode: mode,
         currency,
-        defaults: clean({ ...shared, currency }),
-        countries: rows.map((r) => clean({ ...r, currency: undefined })),
+        defaults: clean({ ...shared, currency, liveSurveyUrl: sameLink ? shared.liveSurveyUrl : '', testSurveyUrl: sameLink ? (sharedTestSame ? shared.liveSurveyUrl : shared.testSurveyUrl) : '' }),
+        countries: rows.map(({ testSameAsLive, ...r }) => clean({ ...r, currency: undefined, liveSurveyUrl: sameLink ? '' : r.liveSurveyUrl, testSurveyUrl: sameLink ? '' : testSameAsLive ? r.liveSurveyUrl : r.testSurveyUrl })),
         vendors: chosen.map((v) => ({ vendorId: v.vendorId, ...(v.cpi === '' ? {} : { cpi: Number(v.cpi) }), uidParam: v.uidParam || 'vid', allowAboveCpi: above.includes(v) })),
         autoAssignVendors: false,
         ...(gate.length ? { gateQuestions: gate } : {}),
@@ -454,7 +468,7 @@ function CreateProjectPage() {
     <>
       <PageHeader
         title="Create project"
-        subtitle="Fill in the basics (LOI, IR, completes, CPI) once, add your target markets, then change any market that differs."
+        subtitle="Add your target markets, then fill a whole column at once by clicking its heading (LOI, IR, CPI, completes), or change a single market in its row."
         actions={<Link href="/projects/templates" className="btn-ghost"><LayoutTemplate className="h-4 w-4" /> Templates</Link>}
       />
       <div className="mb-4"><ErrorBox error={error} /></div>
@@ -607,28 +621,6 @@ function CreateProjectPage() {
             </div>
           </Section>
 
-          <Section title="Basics: LOI, IR, completes and CPI">
-            <p className="mb-4 text-sm text-muted">These apply to every market below. Change a single market in its row when it differs.</p>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-              <Field label="LOI (min) *"><input className="input" type="number" min={1} value={shared.loiMinutes} onChange={(e) => setShared({ ...shared, loiMinutes: num(e.target.value) })} /></Field>
-              <Field label="IR % *"><input className="input" type="number" min={1} max={100} value={shared.irPercent} onChange={(e) => setShared({ ...shared, irPercent: num(e.target.value) })} /></Field>
-              <Field label="Completes *"><input className="input" type="number" min={1} value={shared.targetCompletes} onChange={(e) => setShared({ ...shared, targetCompletes: num(e.target.value) })} /></Field>
-              <Field label={`Client CPI (${currency}) *`}><input className="input" type="number" min={0} step="0.01" value={shared.cpi} onChange={(e) => setShared({ ...shared, cpi: num(e.target.value) })} /></Field>
-              <div className="sm:col-span-2">
-                <Field label="CPI currency" hint="One currency for the whole project">
-                  <CurrencySelect value={currency} onChange={(v) => setCurrency(v ?? 'USD')} />
-                </Field>
-              </div>
-              <div className="sm:col-span-3">
-                <Field label="Target group" hint="Choose one or type a new one to add it">
-                  <input className="input" value={shared.targetGroup} onChange={(e) => setShared({ ...shared, targetGroup: e.target.value })} placeholder="e.g. Gen Z, IT decision makers" maxLength={200} />
-                </Field>
-              </div>
-              <div className="sm:col-span-3" />
-              <div className="sm:col-span-3"><Field label="Live survey link" hint={surveyLinkProblem(shared.liveSurveyUrl) ?? 'Put {uid} where the client survey expects the respondent ID (e.g. replace XXXX with {uid})'}><input className={clsx('input', surveyLinkProblem(shared.liveSurveyUrl) && 'border-bad')} value={shared.liveSurveyUrl} placeholder="https://survey.client.com/s?rid={uid}" onChange={(e) => setShared({ ...shared, liveSurveyUrl: e.target.value })} /></Field></div>
-              <div className="sm:col-span-3"><Field label="Test survey link" hint={surveyLinkProblem(shared.testSurveyUrl) ?? undefined}><input className={clsx('input', surveyLinkProblem(shared.testSurveyUrl) && 'border-bad')} placeholder="https://survey.client.com/test?rid={uid}" value={shared.testSurveyUrl} onChange={(e) => setShared({ ...shared, testSurveyUrl: e.target.value })} /></Field></div>
-            </div>
-          </Section>
 
           <Section
             help="create.markets"
@@ -647,6 +639,24 @@ function CreateProjectPage() {
                 <CountrySelect value={null} onChange={addCountry} placeholder="Search a country, e.g. Japan" />
               </div>
               <span className="text-xs text-muted">Add the same country again for another target group.</span>
+              <label className="ml-auto flex items-center gap-2 text-xs text-muted">
+                CPI currency
+                <span className="w-56"><CurrencySelect value={currency} onChange={(v) => setCurrency(v ?? 'USD')} /></span>
+              </label>
+            </div>
+
+            <div className="mb-4 rounded-lg border border-line bg-surface-2 p-3 text-sm" role="group" aria-label="Survey links">
+              <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+                <label className="inline-flex items-center gap-2 font-medium"><input type="checkbox" checked={sameLink} onChange={(e) => setSameLink(e.target.checked)} /> Use same link for all markets</label>
+                <label className="inline-flex items-center gap-2"><input type="checkbox" checked={sameLink ? sharedTestSame : rows.length > 0 && rows.every((r) => r.testSameAsLive)} onChange={(e) => (sameLink ? setSharedTestSame(e.target.checked) : setRows((rs) => rs.map((r) => ({ ...r, testSameAsLive: e.target.checked }))))} /> Use the live link as the test link{!sameLink && ' (every market)'}</label>
+                <InfoTip id="create.links" label="Survey links" />
+              </div>
+              {sameLink && (
+                <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                  <Field label="Live survey link (all markets)" hint={surveyLinkProblem(shared.liveSurveyUrl) ?? 'Put {uid} where the client survey expects the respondent ID'}><input className={clsx('input', surveyLinkProblem(shared.liveSurveyUrl) && 'border-bad')} value={shared.liveSurveyUrl} placeholder="https://survey.client.com/s?rid={uid}" onChange={(e) => setShared({ ...shared, liveSurveyUrl: e.target.value })} /></Field>
+                  <Field label="Test survey link (all markets)" hint={sharedTestSame ? 'Same as the live link' : surveyLinkProblem(shared.testSurveyUrl) ?? undefined}><input className={clsx('input', !sharedTestSame && surveyLinkProblem(shared.testSurveyUrl) && 'border-bad')} disabled={sharedTestSame} value={sharedTestSame ? shared.liveSurveyUrl : shared.testSurveyUrl} placeholder="https://survey.client.com/test?rid={uid}" onChange={(e) => setShared({ ...shared, testSurveyUrl: e.target.value })} /></Field>
+                </div>
+              )}
             </div>
 
             {importNote && <p className="mb-3 rounded-lg border border-line bg-surface-2 px-3 py-2 text-sm" role="status">{importNote}</p>}
@@ -661,21 +671,13 @@ function CreateProjectPage() {
 
             {rows.length > 0 && (
               <>
-                <BulkFill
-                  selected={selected.length}
-                  total={visible.length}
-                  onApply={applyToRows}
-                  fields={[
-                    { key: 'loiMinutes', label: 'LOI', type: 'number', width: 'w-20' },
-                    { key: 'irPercent', label: 'IR %', type: 'number', width: 'w-20' },
-                    { key: 'cpi', label: `CPI (${currency})`, type: 'number', step: '0.01', width: 'w-24' },
-                    { key: 'targetCompletes', label: 'Completes', type: 'number', width: 'w-24' },
-                    { key: 'targetGroup', label: 'Target group', width: 'w-40', },
-                    { key: 'liveSurveyUrl', label: 'Live link', width: 'w-64', placeholder: 'https://…' },
-                    { key: 'testSurveyUrl', label: 'Test link', width: 'w-64', placeholder: 'https://…' },
-                  ]}
-                  extra={selected.length > 0 && <button type="button" className="btn-ghost px-2.5 py-1.5 text-xs text-bad" onClick={() => removeRows(selected)}><Trash2 className="h-3.5 w-3.5" /> Remove {selected.length}</button>}
-                />
+                {selected.length > 0 && (
+                  <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-brand/30 bg-brand/5 px-3 py-2 text-xs">
+                    <span><b>{selected.length}</b> ticked: a column heading now fills only these.</span>
+                    <button type="button" className="btn-ghost px-2.5 py-1 text-xs" onClick={() => setSelected([])}>Untick all</button>
+                    <button type="button" className="btn-ghost px-2.5 py-1.5 text-xs text-bad" onClick={() => removeRows(selected)}><Trash2 className="h-3.5 w-3.5" /> Remove {selected.length}</button>
+                  </div>
+                )}
                 {rows.length > 5 && (
                   <label className="relative mb-3 block w-full sm:w-72">
                     <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" aria-hidden />
@@ -689,7 +691,15 @@ function CreateProjectPage() {
                         <th className="th w-8">
                           <input type="checkbox" aria-label="Select all markets" checked={visible.length > 0 && visible.every((i) => selected.includes(i))} onChange={(e) => setSelected(e.target.checked ? visible : [])} />
                         </th>
-                        <th className="th">Country</th><th className="th">Language</th><th className="th">Target group</th><th className="th">LOI</th><th className="th">IR %</th><th className="th">CPI ({currency})</th><th className="th">Completes</th><th className="th">Live / test link</th><th className="th" />
+                        <th className="th">Country</th>
+                        <th className="th"><ColumnFill label="Language" type="text" rule={{ maxLength: 10 }} count={visible.length} selected={selected.length} onFill={(v) => applyToRows({ language: v })} hint="A code such as en, es or pt-BR." /></th>
+                        <th className="th"><ColumnFill label="Target group" type="text" rule={{ maxLength: 200 }} count={visible.length} selected={selected.length} onFill={(v) => applyToRows({ targetGroup: v })} /></th>
+                        <th className="th"><ColumnFill label="LOI" rule={{ min: 1, max: 240, integer: true }} count={visible.length} selected={selected.length} onFill={(v) => applyToRows({ loiMinutes: v })} /></th>
+                        <th className="th"><ColumnFill label="IR %" rule={{ min: 1, max: 100, integer: true }} count={visible.length} selected={selected.length} onFill={(v) => applyToRows({ irPercent: v })} /></th>
+                        <th className="th"><ColumnFill label={`CPI (${currency})`} step="0.01" rule={{ min: 0, max: 100000 }} count={visible.length} selected={selected.length} onFill={(v) => applyToRows({ cpi: v })} /></th>
+                        <th className="th"><ColumnFill label="Completes" rule={{ min: 1, max: 1_000_000, integer: true }} count={visible.length} selected={selected.length} onFill={(v) => applyToRows({ targetCompletes: v })} /></th>
+                        <th className="th">{sameLink ? 'Live / test link' : <ColumnFill label="Live / test link" type="text" rule={{ maxLength: 2000 }} count={visible.length} selected={selected.length} onFill={(v) => applyToRows({ liveSurveyUrl: v })} hint="Puts this live link in every market. Different links per market: type them in the rows." />}</th>
+                        <th className="th" />
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-line">
@@ -709,8 +719,19 @@ function CreateProjectPage() {
                             ))}
                             <td className="td"><input className={clsx('input w-20 px-2 py-1', r.targetCompletes !== '' && 'border-brand/60')} type="number" placeholder={String(shared.targetCompletes)} value={r.targetCompletes} onChange={(e) => setRow(i, { targetCompletes: num(e.target.value) })} /></td>
                             <td className="td space-y-1">
-                              <input className={clsx('input w-56 px-2 py-1', surveyLinkProblem(r.liveSurveyUrl) && 'border-bad')} title={surveyLinkProblem(r.liveSurveyUrl) ?? undefined} aria-label={`Live link for ${countryName(r.countryCode)}`} placeholder={shared.liveSurveyUrl ? 'same as basics' : 'add link before going live'} value={r.liveSurveyUrl} onChange={(e) => setRow(i, { liveSurveyUrl: e.target.value })} />
-                              <input className={clsx('input w-56 px-2 py-1 text-xs', surveyLinkProblem(r.testSurveyUrl) && 'border-bad')} title={surveyLinkProblem(r.testSurveyUrl) ?? undefined} aria-label={`Test link for ${countryName(r.countryCode)}`} placeholder={shared.testSurveyUrl ? 'test: same as basics' : 'test link (optional)'} value={r.testSurveyUrl ?? ''} onChange={(e) => setRow(i, { testSurveyUrl: e.target.value })} />
+                              {sameLink ? (
+                                <span className="text-xs text-muted">Same link for all markets</span>
+                              ) : (
+                                <>
+                                  <input className={clsx('input w-56 px-2 py-1', surveyLinkProblem(r.liveSurveyUrl) && 'border-bad')} title={surveyLinkProblem(r.liveSurveyUrl) ?? undefined} aria-label={`Live link for ${countryName(r.countryCode)}`} placeholder="add link before going live" value={r.liveSurveyUrl} onChange={(e) => setRow(i, { liveSurveyUrl: e.target.value })} />
+                                  {r.testSameAsLive ? (
+                                    <div className="w-56 truncate rounded border border-dashed border-line px-2 py-1 text-xs text-muted">Test: same as live</div>
+                                  ) : (
+                                    <input className={clsx('input w-56 px-2 py-1 text-xs', surveyLinkProblem(r.testSurveyUrl) && 'border-bad')} title={surveyLinkProblem(r.testSurveyUrl) ?? undefined} aria-label={`Test link for ${countryName(r.countryCode)}`} placeholder="test link (optional)" value={r.testSurveyUrl ?? ''} onChange={(e) => setRow(i, { testSurveyUrl: e.target.value })} />
+                                  )}
+                                  <label className="flex items-center gap-1.5 text-[11px] text-muted"><input type="checkbox" checked={!!r.testSameAsLive} onChange={(e) => setRow(i, { testSameAsLive: e.target.checked })} aria-label={`Use the live link as the test link for ${countryName(r.countryCode)}`} /> Test = live link</label>
+                                </>
+                              )}
                             </td>
                             <td className="td">
                               <div className="flex gap-1">
@@ -724,7 +745,7 @@ function CreateProjectPage() {
                     </tbody>
                   </table>
                 </div>
-                {!shared.liveSurveyUrl && rows.some((r) => !r.liveSurveyUrl) && (
+                {(sameLink ? !shared.liveSurveyUrl : rows.some((r) => !r.liveSurveyUrl)) && (
                   <p className="flex items-center gap-1.5 text-xs text-warn"><AlertTriangle className="h-3.5 w-3.5" /> Markets without a live link can be saved, but they cannot go live until the link is added.</p>
                 )}
               </>

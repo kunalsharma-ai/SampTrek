@@ -10,6 +10,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ALLOW_WITHOUT_MFA, IS_PUBLIC, ROLES, STAFF } from './decorators';
 import { AuthUser } from './auth.types';
 import { ObserveTokens } from '../super-admin/observe';
+import { LOGIN_AS_BLOCKED } from './login-as';
 
 const res0 = (ctx: ExecutionContext) => ctx.switchToHttp().getResponse<Response>();
 
@@ -30,7 +31,7 @@ export class AuthGuard implements CanActivate {
     const token = this.extractToken(req);
     if (!token) throw new UnauthorizedException('Not signed in');
 
-    let payload: { sub: string; purpose?: string; iat?: number; at?: number };
+    let payload: { sub: string; purpose?: string; iat?: number; at?: number; as?: string };
     try {
       payload = await this.jwt.verifyAsync(token, { secret: config.jwtSecret });
     } catch {
@@ -47,6 +48,14 @@ export class AuthGuard implements CanActivate {
     if (user.sessionsValidAfter && issuedAt <= user.sessionsValidAfter.getTime()) throw new UnauthorizedException('Session expired, sign in again');
     const superAdmin = user.superAdmin && user.organization.platformOwner;
     req.user = { id: user.id, organizationId: user.organizationId, role: user.role, email: user.email, name: user.name, ...(superAdmin ? { superAdmin: true } : {}) };
+    // "Login as" (src/auth/login-as.ts): never the Super Admin, never the person's own password or two-step sign-in.
+    if (payload.as) {
+      if (user.superAdmin) throw new UnauthorizedException('Session expired, sign in again');
+      const path0: string = (req as Request & { route?: { path?: string } }).route?.path ?? req.path;
+      if (LOGIN_AS_BLOCKED.test(path0)) throw new ForbiddenException({ statusCode: 403, code: 'LOGIN_AS_LIMIT', message: 'You are logged in as this person. Their password and two-step sign-in can only be changed by them.' });
+      req.user = { ...req.user, loginAsBy: payload.as };
+      res0(ctx).setHeader('X-Login-As', payload.as);
+    }
 
     // Super Admin observing an organisation (docs/SUPER_ADMIN_OBSERVE.md): read-only, as that organisation's admin.
     const observed = superAdmin ? await this.observe.read(req, user.id) : null;

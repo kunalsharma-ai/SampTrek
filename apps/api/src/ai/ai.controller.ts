@@ -10,6 +10,7 @@ import { MonitorModule } from '../monitor/monitor.controller';
 import { ProjectsModule } from '../projects/projects.controller';
 import { ReportsModule } from '../reports/reports.controller';
 import { TasksModule } from '../tasks/tasks.service';
+import { translateSchema } from './translate';
 import { aiSettingsSchema, AiService, chatSchema, MAX_DOC_BYTES, MAX_VOICE_BYTES, voiceSessionSchema, voiceToolSchema, voiceTurnSchema } from './ai.service';
 
 /** AI copilot and voice (docs/AI_COPILOT.md). Staff only; the organisation's AI settings decide who. */
@@ -76,6 +77,14 @@ export class AiController {
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_DOC_BYTES + 1, files: 1 } }))
   upload(@CurrentUser() u: AuthUser, @UploadedFile() file?: { originalname: string; mimetype: string; size: number; buffer: Buffer }) {
     return this.ai.upload(u, file);
+  }
+
+  /** Draft translation of gate survey questions for one market language (feedback 2026-11-24). */
+  @Post('translate-questions')
+  @HttpCode(200)
+  @Roles(...EDITORS)
+  translate(@CurrentUser() u: AuthUser, @Body(new ZodPipe(translateSchema)) b: z.infer<typeof translateSchema>) {
+    return this.ai.translateQuestions(u, b);
   }
 
   /** Read a brief (file or pasted text) into a Create project draft. */

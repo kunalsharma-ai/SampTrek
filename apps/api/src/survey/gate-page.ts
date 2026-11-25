@@ -2,10 +2,11 @@ import { PROVIDERS } from './captcha';
 import { brandHtml, designCss, faviconHtml, gateBackgroundCss, inkOn, PlatformBrand, poweredByHtml } from './page-design';
 import { Question } from './questions';
 import type { GateView } from './survey.service';
+import { fill, gateText, GateText } from './gate-i18n';
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 
-function renderQuestion(section: string, q: Question, i: number): string {
+function renderQuestion(section: string, q: Question, i: number, t: GateText): string {
   const name = `${section}.${q.id}`;
   const v = q.validation ?? {};
   const data = [
@@ -22,7 +23,7 @@ function renderQuestion(section: string, q: Question, i: number): string {
     v.maxLength !== undefined ? `data-max-length="${v.maxLength}"` : '',
     v.format ? `data-format="${v.format}"` : '',
   ].filter(Boolean).join(' ');
-  const legend = `<legend><span class="qn">${i + 1}.</span> ${esc(q.text)}${q.required ? '' : ' <span class="opt-tag">(optional)</span>'}</legend>${q.help ? `<p class="help">${esc(q.help)}</p>` : ''}`;
+  const legend = `<legend><span class="qn">${i + 1}.</span> ${esc(q.text)}${q.required ? '' : ` <span class="opt-tag">${esc(t.optional)}</span>`}</legend>${q.help ? `<p class="help">${esc(q.help)}</p>` : ''}`;
   let body = '';
   const opts = q.options ?? [];
   switch (q.type) {
@@ -31,10 +32,10 @@ function renderQuestion(section: string, q: Question, i: number): string {
       break;
     case 'multi':
       body = opts.map((o) => `<label class="opt"><input type="checkbox" name="${esc(name)}" value="${esc(o.id)}"${o.exclusive ? ' data-exclusive="1"' : ''}><span>${esc(o.label)}</span></label>`).join('');
-      if (v.minSelect || v.maxSelect) body = `<p class="help">${v.minSelect && v.maxSelect ? `Choose ${v.minSelect} to ${v.maxSelect}.` : v.minSelect ? `Choose at least ${v.minSelect}.` : `Choose up to ${v.maxSelect}.`}</p>${body}`;
+      if (v.minSelect || v.maxSelect) body = `<p class="help">${v.minSelect && v.maxSelect ? esc(fill(t.range, { a: v.minSelect, b: v.maxSelect })) : v.minSelect ? esc(fill(t.atLeast, { n: v.minSelect })) : esc(fill(t.upTo, { n: v.maxSelect ?? '' }))}</p>${body}`;
       break;
     case 'dropdown':
-      body = `<select name="${esc(name)}" aria-label="${esc(q.text)}"><option value="">Select…</option>${opts.map((o) => `<option value="${esc(o.id)}">${esc(o.label)}</option>`).join('')}</select>`;
+      body = `<select name="${esc(name)}" aria-label="${esc(q.text)}"><option value="">${esc(t.select)}</option>${opts.map((o) => `<option value="${esc(o.id)}">${esc(o.label)}</option>`).join('')}</select>`;
       break;
     case 'number':
       body = `<input type="number" inputmode="${v.integer ? 'numeric' : 'decimal'}" name="${esc(name)}" aria-label="${esc(q.text)}"${v.min !== undefined ? ` min="${v.min}"` : ''}${v.max !== undefined ? ` max="${v.max}"` : ''}${v.integer ? ' step="1"' : ' step="any"'}>`;
@@ -78,41 +79,46 @@ function renderHuman(h: NonNullable<GateView['human']>, imageUrl: string): strin
  * (language, time zone, fingerprint and device hash, automated-browser signals) and the background captcha are collected meanwhile.
  * Everything is posted to /g/:token, which runs every check and returns where to go next.
  */
+/** Only the texts the page script uses, so the page carries nothing it does not show. */
+const JS_KEYS = ['atLeast', 'noMore', 'number', 'whole', 'min', 'max', 'minLen', 'maxLen', 'format', 'everyRow', 'answer', 'failed', 'completeCheck', 'chooseAnswer', 'typeAnswer', 'tick', 'tryAgain'] as const;
+const jsText = (t: GateText) => Object.fromEntries(JS_KEYS.map((k) => [k, t[k]]));
+
 export function renderGatePage(view: GateView, nonce: string): string {
+  const { lang, t, rtl } = gateText(view.lang);
   const steps: { id: string; title: string; intro: string; html: string; extra?: string }[] = [];
   if (view.consent) {
     const c = view.consent;
     const paras = esc(c.body).split(/\n{2,}/).map((p) => `<p>${p.replace(/\n/g, '<br>')}</p>`).join('');
-    const link = c.privacyUrl?.startsWith('https://') ? `<p><a href="${esc(c.privacyUrl)}" target="_blank" rel="noopener noreferrer">Read the full privacy notice</a></p>` : '';
+    const link = c.privacyUrl?.startsWith('https://') ? `<p><a href="${esc(c.privacyUrl)}" target="_blank" rel="noopener noreferrer">${esc(t.privacy)}</a></p>` : '';
     steps.push({
       id: 'consent',
       title: esc(c.title),
-      intro: 'Please read this before you start.',
-      html: `<div class="notice">${paras}${link}</div><fieldset class="q" id="cbox"><label class="opt"><input type="checkbox" id="cagree"><span>I have read this and I agree</span></label><p class="qerr" id="cerr" hidden></p></fieldset>`,
-      extra: `<button type="button" class="ghost" id="cdecline">I do not agree</button>`,
+      intro: esc(t.consentIntro),
+      html: `<div class="notice">${paras}${link}</div><fieldset class="q" id="cbox"><label class="opt"><input type="checkbox" id="cagree"><span>${esc(t.agree)}</span></label><p class="qerr" id="cerr" hidden></p></fieldset>`,
+      extra: `<button type="button" class="ghost" id="cdecline">${esc(t.decline)}</button>`,
     });
   }
   if (view.human) {
     steps.push({
       id: 'human',
-      title: 'Quick check',
-      intro: 'Please answer this to show you are not a robot.',
+      title: esc(t.quickCheck),
+      intro: esc(t.robot),
       html: `<fieldset class="q" id="hbox">${renderHuman(view.human, `/g/${encodeURIComponent(view.token)}/captcha.svg?a=${view.human.attemptsLeft}`)}</fieldset>`,
     });
   }
-  if (view.gateQuestions.length) steps.push({ id: 'gate', title: 'About you', intro: 'A few questions before the survey starts.', html: view.gateQuestions.map((q, i) => renderQuestion('gate', q, i)).join('') });
-  if (view.prescreen.length) steps.push({ id: 'prescreen', title: 'A few more questions', intro: 'These help us check the survey is right for you.', html: view.prescreen.map((q, i) => renderQuestion('prescreen', q, i)).join('') });
+  if (view.gateQuestions.length) steps.push({ id: 'gate', title: esc(t.aboutYou), intro: esc(t.aboutIntro), html: view.gateQuestions.map((q, i) => renderQuestion('gate', q, i, t)).join('') });
+  if (view.prescreen.length) steps.push({ id: 'prescreen', title: esc(t.more), intro: esc(t.moreIntro), html: view.prescreen.map((q, i) => renderQuestion('prescreen', q, i, t)).join('') });
 
-  const cfg = JSON.stringify({ preview: !!view.preview, captcha: view.captcha, collect: view.collect, steps: steps.map((s) => s.id), human: view.human ? { kind: view.human.kind, style: view.human.style } : null }).replace(/</g, '\\u003c');
+  const cfg = JSON.stringify({ preview: !!view.preview, captcha: view.captcha, collect: view.collect, steps: steps.map((s) => s.id), t: jsText(t), human: view.human ? { kind: view.human.kind, style: view.human.style } : null }).replace(/</g, '\\u003c');
   const total = steps.length;
   const stepHtml = steps
     .map(
-      (s, i) => `<section class="step" data-step="${s.id}"${i ? ' hidden' : ''}>${total > 1 ? `<p class="prog">Step ${i + 1} of ${total}</p>` : ''}<h1>${s.title}</h1><p class="intro">${s.intro}</p>${s.html}
-<button type="button" class="next">${i === total - 1 ? 'Start survey' : 'Continue'}</button>${s.extra ?? ''}</section>`,
+      (s, i) => `<section class="step" data-step="${s.id}"${i ? ' hidden' : ''}>${total > 1 ? `<p class="prog">${esc(fill(t.step, { n: i + 1, t: total }))}</p>` : ''}<h1>${s.title}</h1><p class="intro">${s.intro}</p>${s.html}
+<button type="button" class="next">${esc(i === total - 1 ? t.start : t.cont)}</button>${s.extra ?? ''}</section>`,
     )
     .join('');
 
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  return `<!doctype html><html lang="${esc(lang)}"${rtl ? ' dir="rtl"' : ''}><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex"><title>Survey</title>${faviconHtml(view.design, view.platform)}
 <style nonce="${nonce}">
 ${designCss(view.design)}
@@ -140,14 +146,14 @@ button.ghost{margin-top:8px;background:transparent;color:var(--muted);border:1px
 <noscript><h1>Please turn on JavaScript</h1><p class="intro">This survey needs JavaScript to start.</p></noscript>
 <form id="f" hidden novalidate>
 ${stepHtml}
-<section class="step" data-step="wait"${total ? ' hidden' : ''}><div class="spin" role="status" aria-label="Loading"></div><h1>Starting your survey</h1><p class="intro">This takes a few seconds.</p></section>
+<section class="step" data-step="wait"${total ? ' hidden' : ''}><div class="spin" role="status" aria-label="Loading"></div><h1>${esc(t.starting)}</h1><p class="intro">${esc(t.seconds)}</p></section>
 <p class="err" id="err" role="alert" hidden></p>
 </form>
 ${view.human?.kind === 'widget' ? `<script nonce="${nonce}" src="${PROVIDERS[view.human.style as 'turnstile' | 'hcaptcha'].script}" async defer></script>` : ''}
 <script type="application/json" id="cfg">${cfg}</script>
 <script nonce="${nonce}">
 (function(){
-var cfg=JSON.parse(document.getElementById('cfg').textContent);var f=document.getElementById('f');f.hidden=false;var err=document.getElementById('err');
+var cfg=JSON.parse(document.getElementById('cfg').textContent);var T=cfg.t;function F(s,v){return s.replace(/\\{(\\w)\\}/g,function(m,k){return v[k]==null?'':String(v[k])})}var f=document.getElementById('f');f.hidden=false;var err=document.getElementById('err');
 var FORMATS={letters:/^[\\p{L}\\p{M}' .-]+$/u,digits:/^\\d+$/,alphanumeric:/^[\\p{L}\\p{N} ]+$/u,email:/^[^\\s@]+@[^\\s@]+\\.[^\\s@]{2,}$/,postal:/^[A-Za-z0-9][A-Za-z0-9 -]{1,9}$/,phone:/^\\+?[0-9 ()-]{6,20}$/};
 function hex(b){return Array.prototype.map.call(new Uint8Array(b),function(x){return ('0'+x.toString(16)).slice(-2)}).join('')}
 function sha(s){return crypto.subtle.digest('SHA-256',new TextEncoder().encode(s))}
@@ -168,22 +174,22 @@ var work=(async function(){var out={};
  if(cfg.captcha)out.nonce=await solve(cfg.captcha);
  return out})();
 function post(path,body){if(cfg.preview)return new Promise(function(){});return fetch(location.pathname+path,{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify(body)}).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json()})}
-function fail(){err.textContent='Something went wrong. Please check your connection and try again.';err.hidden=false}
+function fail(){err.textContent=T.failed;err.hidden=false}
 function show(id){Array.prototype.forEach.call(f.querySelectorAll('.step'),function(s){s.hidden=s.getAttribute('data-step')!==id});window.scrollTo(0,0);var first=f.querySelector('.step[data-step="'+id+'"] input,.step[data-step="'+id+'"] select');if(first&&id!=='wait')first.focus({preventScroll:true})}
 // "None of these" clears other choices, and choosing another clears it.
 f.addEventListener('change',function(e){var t=e.target;if(t.type!=='checkbox'||!t.checked)return;var box=t.closest('fieldset');Array.prototype.forEach.call(box.querySelectorAll('input[type=checkbox]'),function(o){if(o!==t&&(t.dataset.exclusive||o.dataset.exclusive))o.checked=false})});
 function readQ(fs){var type=fs.dataset.type,req=fs.dataset.required==='1',name=fs.dataset.section+'.'+fs.dataset.qid,d=fs.dataset,v,msg='';
  if(type==='single'){var c=fs.querySelector('input:checked');v=c?c.value:''}
  else if(type==='multi'){v=Array.prototype.map.call(fs.querySelectorAll('input:checked'),function(i){return i.value});
-  if(v.length&&d.minSelect&&v.length<+d.minSelect)msg='Choose at least '+d.minSelect+'.';if(d.maxSelect&&v.length>+d.maxSelect)msg='Choose no more than '+d.maxSelect+'.'}
+  if(v.length&&d.minSelect&&v.length<+d.minSelect)msg=F(T.atLeast,{n:d.minSelect});if(d.maxSelect&&v.length>+d.maxSelect)msg=F(T.noMore,{n:d.maxSelect})}
  else if(type==='dropdown'){v=fs.querySelector('select').value}
  else if(type==='number'){var raw=fs.querySelector('input').value.trim();v=raw===''?'':Number(raw);
-  if(raw!==''){if(!isFinite(v))msg='Enter a number.';else if(d.integer&&v%1)msg='Enter a whole number.';else if(d.min!==undefined&&v<+d.min)msg='Enter '+d.min+' or more.';else if(d.max!==undefined&&v>+d.max)msg='Enter '+d.max+' or less.'}}
+  if(raw!==''){if(!isFinite(v))msg=T.number;else if(d.integer&&v%1)msg=T.whole;else if(d.min!==undefined&&v<+d.min)msg=F(T.min,{n:d.min});else if(d.max!==undefined&&v>+d.max)msg=F(T.max,{n:d.max})}}
  else if(type==='text'){v=fs.querySelector('input').value.trim();
-  if(v){if(d.minLength&&v.length<+d.minLength)msg='Enter at least '+d.minLength+' characters.';else if(d.maxLength&&v.length>+d.maxLength)msg='Enter at most '+d.maxLength+' characters.';else if(d.format&&FORMATS[d.format]&&!FORMATS[d.format].test(v))msg='Check the format of your answer.'}}
- else if(type==='grid'){v={};var missing=false;Array.prototype.forEach.call(fs.querySelectorAll('.grow'),function(r){var c=r.querySelector('input:checked');if(c)v[r.dataset.row]=c.value;else missing=true});if(missing&&Object.keys(v).length)msg='Answer every row.';if(missing&&!Object.keys(v).length)v={}}
+  if(v){if(d.minLength&&v.length<+d.minLength)msg=F(T.minLen,{n:d.minLength});else if(d.maxLength&&v.length>+d.maxLength)msg=F(T.maxLen,{n:d.maxLength});else if(d.format&&FORMATS[d.format]&&!FORMATS[d.format].test(v))msg=T.format}}
+ else if(type==='grid'){v={};var missing=false;Array.prototype.forEach.call(fs.querySelectorAll('.grow'),function(r){var c=r.querySelector('input:checked');if(c)v[r.dataset.row]=c.value;else missing=true});if(missing&&Object.keys(v).length)msg=T.everyRow;if(missing&&!Object.keys(v).length)v={}}
  var empty=v===''||(Array.isArray(v)&&!v.length)||(v&&typeof v==='object'&&!Array.isArray(v)&&!Object.keys(v).length);
- if(!msg&&empty&&req)msg='Please answer this question.';
+ if(!msg&&empty&&req)msg=T.answer;
  var e=fs.querySelector('.qerr');e.textContent=msg;e.hidden=!msg;fs.classList.toggle('bad',!!msg);
  return {ok:!msg,empty:empty,value:v}}
 var answers={gate:{},prescreen:{}},consent;
@@ -193,7 +199,7 @@ window.pxCaptcha=function(t){widgetToken=t;var he=document.getElementById('herr'
 async function next(){if(busy)return;err.hidden=true;var id=cfg.steps[idx];
  if(id==='human'){var he=document.getElementById('herr'),k=cfg.human.kind,ans='';
   if(k==='choice'){var c=f.querySelector('input[name=human]:checked');ans=c?c.value:''}else if(k==='widget'){ans=widgetToken}else{ans=document.getElementById('ha').value.trim()}
-  if(!ans){he.textContent=k==='widget'?'Please complete the check.':k==='choice'?'Please choose an answer.':'Please type your answer.';he.hidden=false;return}
+  if(!ans){he.textContent=k==='widget'?T.completeCheck:k==='choice'?T.chooseAnswer:T.typeAnswer;he.hidden=false;return}
   busy=true;try{var r=await post('/human',{answer:ans});busy=false;if(r.location)return location.replace(r.location);
    if(!r.ok){var h=r.human;document.getElementById('hq').textContent=h.question;
     if(k==='choice'){var box=document.getElementById('hopts');box.textContent='';h.options.forEach(function(o){var l=document.createElement('label');l.className='opt';var i=document.createElement('input');i.type='radio';i.name='human';i.value=o;var s=document.createElement('span');s.textContent=o;l.appendChild(i);l.appendChild(s);box.appendChild(l)})}
@@ -202,13 +208,13 @@ async function next(){if(busy)return;err.hidden=true;var id=cfg.steps[idx];
     else{document.getElementById('ha').value=''}
     he.textContent=(k==='widget'?'The check did not pass. Please try again':'That is not right. Try this one')+' ('+h.attemptsLeft+' '+(h.attemptsLeft===1?'try':'tries')+' left).';he.hidden=false;return}}
   catch(e){busy=false;return fail()}}
- else if(id==='consent'){var ce=document.getElementById('cerr');if(!document.getElementById('cagree').checked){ce.textContent='Please tick the box to agree, or choose “I do not agree”.';ce.hidden=false;return}ce.hidden=true;consent=true}
+ else if(id==='consent'){var ce=document.getElementById('cerr');if(!document.getElementById('cagree').checked){ce.textContent=T.tick;ce.hidden=false;return}ce.hidden=true;consent=true}
  else if(!collect(id))return;
  idx++;if(idx<cfg.steps.length)return show(cfg.steps[idx]);
  submit()}
 async function submit(){busy=true;show('wait');
  try{var body=await work;body.answers=answers;if(consent!==undefined)body.consent=consent;var j=await post('',body);if(!j.location)throw new Error('no location');location.replace(j.location)}
- catch(e){busy=false;idx=Math.max(0,cfg.steps.length-1);if(cfg.steps.length)show(cfg.steps[idx]);fail();if(!cfg.steps.length){var b=document.createElement('button');b.type='button';b.textContent='Try again';b.onclick=function(){b.remove();submit()};f.appendChild(b)}}}
+ catch(e){busy=false;idx=Math.max(0,cfg.steps.length-1);if(cfg.steps.length)show(cfg.steps[idx]);fail();if(!cfg.steps.length){var b=document.createElement('button');b.type='button';b.textContent=T.tryAgain;b.onclick=function(){b.remove();submit()};f.appendChild(b)}}}
 Array.prototype.forEach.call(f.querySelectorAll('.next'),function(b){b.addEventListener('click',next)});
 var dec=document.getElementById('cdecline');if(dec)dec.addEventListener('click',function(){if(busy)return;consent=false;submit()});
 f.addEventListener('submit',function(e){e.preventDefault();next()});

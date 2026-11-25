@@ -14,7 +14,7 @@ import { EntitlementsService } from '../super-admin/entitlements';
 import { forVendor } from '../common/vendor-safe';
 import { VendorProjectsController } from './vendor-projects';
 import { entryQuery } from '../projects/markets';
-import { BadRequestException, Body, Controller, ForbiddenException, Get, Module, NotFoundException, Param, Patch, Post, Query, Res } from '@nestjs/common';
+import { BadRequestException, Body, Controller, ForbiddenException, Get, HttpCode, Module, NotFoundException, Param, Patch, Post, Query, Res } from '@nestjs/common';
 import { Response } from 'express';
 import { Prisma } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
@@ -389,7 +389,7 @@ export class PortalUsersController {
         ...(vendorId ? { vendorId } : {}),
       },
       orderBy: { createdAt: 'desc' },
-      select: { id: true, name: true, email: true, role: true, active: true, createdAt: true, client: { select: { id: true, name: true } }, vendor: { select: { id: true, name: true } } },
+      select: { id: true, name: true, email: true, role: true, active: true, createdAt: true, lastLoginAt: true, passwordSetAt: true, client: { select: { id: true, name: true } }, vendor: { select: { id: true, name: true } } },
     });
   }
 
@@ -420,6 +420,22 @@ export class PortalUsersController {
       if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') throw new BadRequestException('A user with this email already exists');
       throw e;
     }
+  }
+
+  /**
+   * A new password for a client or vendor login (feedback 2026-11-24). Stored passwords are hashed and
+   * can never be shown, so a forgotten one is replaced: the admin types or generates a new one and
+   * shares it. Their other sessions end.
+   */
+  @Post(':id/password')
+  @HttpCode(200)
+  async setPassword(@CurrentUser() u: AuthUser, @Param('id') id: string, @Body(new ZodPipe(z.object({ password: z.string().min(10, 'Use at least 10 characters').max(200) }).strict())) body: { password: string }) {
+    const found = await this.prisma.user.findFirst({ where: { id, organizationId: u.organizationId, role: { in: ['CLIENT_USER', 'VENDOR_USER'] } } });
+    if (!found) throw new NotFoundException();
+    const now = new Date();
+    await this.prisma.user.update({ where: { id }, data: { passwordHash: await bcrypt.hash(body.password, 10), passwordSetAt: now, sessionsValidAfter: now } });
+    await this.audit.record({ organizationId: u.organizationId, actorId: u.id, action: 'portal-user.password', entityType: 'User', entityId: id });
+    return { id, passwordSetAt: now };
   }
 
   @Patch(':id')

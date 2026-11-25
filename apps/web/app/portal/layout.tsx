@@ -9,7 +9,9 @@ import { ThemeMenu } from '@/components/shell/theme-menu';
 import { LanguageMenu, useLanguagesAllowed } from '@/components/i18n';
 import { useTheme } from '@/components/theme';
 import { Loading } from '@/components/ui';
-import { get, post } from '@/lib/api';
+import { endLoginAs, get, post } from '@/lib/api';
+import { LoginAsBanner } from '@/components/login-as-banner';
+import { VendorBell } from '@/components/portal/vendor-extras';
 import { applyDocumentBrand, DEFAULT_BRAND, orgTheme } from '@/lib/branding';
 import { BrandIcon } from '@/components/brand-mark';
 import { hasFeature, isPortalRole, type Me } from '@/lib/types';
@@ -55,10 +57,11 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
           </Link>
           <div className="flex items-center gap-2 text-sm">
             <span className="hidden text-muted sm:inline" translate="no">{me.user.name}</span>
+            {me.user.role === 'VENDOR_USER' && <VendorBell />}
             <Link href="/portal/account" className="btn-ghost px-2.5 py-1.5" aria-label="Account security" title="Account security"><ShieldCheck className="h-4 w-4" /></Link>
             <LanguageMenu />
             <ThemeMenu showStudio={false} />
-            <button className="btn-ghost px-2.5 py-1.5" onClick={async () => { await post('/auth/logout'); router.replace('/login'); }}>
+            <button className="btn-ghost px-2.5 py-1.5" onClick={async () => { if (me.loginAs) return endLoginAs(); await post('/auth/logout'); router.replace('/login'); }}>
               <LogOut className="h-4 w-4" /> <span className="hidden sm:inline">Sign out</span>
             </button>
           </div>
@@ -75,6 +78,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
         </nav>
       </header>
       <main className="anim-in mx-auto max-w-[1200px] px-4 py-6 sm:px-6">
+        {me.loginAs && <LoginAsBanner name={`${me.user.name} (${company})`} by={me.loginAs.by.name} />}
         {me.features?.block && !pathname.startsWith('/portal/account') ? <PlanBlocked block={me.features.block} />
           : me.features && me.features.web[me.user.role === 'VENDOR_USER' ? 'portal.vendor' : 'portal.client'] === false && !pathname.startsWith('/portal/account') ? <FeatureOff feature="portal" />
           : children}

@@ -29,7 +29,7 @@ import {
 import { captchaSvg, CaptchaStyle, CAPTCHA_STYLES, HUMAN_MAX_ATTEMPTS, humanChallenge, normaliseAnswer, ProviderStyle, providerKeysOf, verifyProvider } from './captcha';
 import { DEFAULT_DESIGN, defaultPlatformBrand, designOf, END_STATUSES, EndStatus, PageDesign, PlatformBrand, platformBrandOf } from './page-design';
 import { brandOf } from '../branding/branding';
-import { evaluate, Question, questionsOf } from './questions';
+import { evaluate, localizeQuestions, Question, questionsOf } from './questions';
 import { TorService } from './tor.service';
 import { IpReputationService } from './ip-reputation';
 import { checkAutomation, FraudRules, fraudRulesOf, riskOf, signalsOf } from './fraud';
@@ -90,6 +90,8 @@ export interface GateView {
   captcha: { challenge: string; bits: number } | null;
   collect: { languages: boolean; timezone: boolean; fingerprint: boolean; signals?: boolean };
   gateQuestions: Question[];
+  /** The market's language: page texts and translated questions use it. */
+  lang?: string;
   prescreen: Question[];
   /** Consent notice for the market, shown first (null when none applies). */
   consent: { title: string; body: string; privacyUrl: string | null; version: number } | null;
@@ -611,8 +613,10 @@ export class SurveyService {
         human: this.humanView(session),
         captcha: powRequired(security, captchaStyleOf(session)) ? { challenge: powChallenge(appConfig.jwtSecret, token), bits: powBits(session.isTest) } : null,
         collect: { languages: !!security.browserLanguage, timezone: !!security.timezoneTracking, fingerprint: !!(security.browserFingerprinting || security.crossProjectDuplicates), signals: !!security.automationDetection },
-        gateQuestions: security.gateSurvey ? questionsOf(session.project.gateQuestions) : [],
-        prescreen: security.prescreening ? questionsOf(session.project.prescreen) : [],
+        // In the market's language where the questions have a translation (feedback 2026-11-24).
+        gateQuestions: security.gateSurvey ? localizeQuestions(questionsOf(session.project.gateQuestions), session.projectCountry.language) : [],
+        prescreen: security.prescreening ? localizeQuestions(questionsOf(session.project.prescreen), session.projectCountry.language) : [],
+        lang: session.projectCountry.language,
         consent: consent ? { title: consent.title, body: consent.body, privacyUrl: consent.privacyUrl, version: consent.version } : null,
         design: designOf(session.project.pageDesign),
         base: appConfig.publicBaseUrl,

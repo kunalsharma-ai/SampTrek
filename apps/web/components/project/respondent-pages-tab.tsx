@@ -3,7 +3,7 @@ import clsx from 'clsx';
 import { Check, ImagePlus, Monitor, Palette, PartyPopper, RotateCcw, Smartphone, Timer, Trash2, Type } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ErrorBox, Field, Loading, Section, Toggle } from '@/components/ui';
-import { api, API_URL, ApiError, get, post } from '@/lib/api';
+import { api, API_URL, authInit, ApiError, get, post } from '@/lib/api';
 import type { ProjectDetail } from './types';
 import { InfoTip, Label } from '@/components/help';
 
@@ -130,7 +130,7 @@ function ImagePicker({ label, hint, projectId, value, assetBase, editable, onCha
     try {
       const fd = new FormData();
       fd.append('file', f);
-      const res = await fetch(`${API_URL}/api/v1/projects/${projectId}/page-assets`, { method: 'POST', body: fd, credentials: 'include' });
+      const res = await fetch(`${API_URL}/api/v1/projects/${projectId}/page-assets`, { method: 'POST', body: fd, ...authInit() });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new ApiError(res.status, data?.message ?? (res.status === 413 ? 'That image is over 1.5 MB' : 'Upload failed'));
       onChange(data.id);

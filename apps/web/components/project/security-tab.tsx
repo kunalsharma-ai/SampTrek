@@ -1,4 +1,5 @@
 'use client';
+import { QuestionTranslations } from '@/components/project/question-translations';
 import { DevicePicker, describeDevices, devicesProblem, withOs, type DeviceSettings } from './mobile-os';
 import clsx from 'clsx';
 import { Bot, Copy, ExternalLink, Fingerprint, Globe2, Link2, ListChecks, MonitorSmartphone, ShieldCheck } from 'lucide-react';
@@ -227,11 +228,13 @@ export function SecurityTab({ project, editable, reload }: { project: ProjectDet
         <Section title="Gate survey questions">
           {!security.gateSurvey && <p className="mb-3 text-sm text-warn">The gate survey is off; these questions are saved but not asked.</p>}
           <QuestionBuilder value={gate} onChange={setGate} editable={editable} templatesCurrency={currency} emptyText="No gate questions yet. Pick an audience set (B2B, B2C, parents, teens, healthcare consumers, patients or caregivers), add single profile questions from the library, or build your own." />
+          <QuestionTranslations questions={gate} onChange={setGate} editable={editable} languages={project.countries.map((c) => c.language)} />
         </Section>
 
         <Section title="Prescreener questions">
           {!security.prescreening && <p className="mb-3 text-sm text-warn">The prescreener is off; these questions are saved but not asked.</p>}
           <QuestionBuilder value={pre} onChange={setPre} editable={editable} emptyText="No prescreener questions yet. Add the questions that decide who qualifies, and mark which answers screen out." />
+          <QuestionTranslations questions={pre} onChange={setPre} editable={editable} languages={project.countries.map((c) => c.language)} what="prescreener" />
         </Section>
 
         {editable && (dirty || saved || !!error) && (
