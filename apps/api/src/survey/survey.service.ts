@@ -5,7 +5,7 @@ import { config as appConfig } from '../common/config';
 import { hmacSha256, randomToken, safeEqualHex, sha256 } from '../common/crypto';
 import { deviceLimitsOn, effectiveSecurity } from './vendor-security';
 import { WebhooksService } from '../webhooks/webhooks.service';
-import { PrismaService } from '../prisma/prisma.service';
+import { PrismaService, retryOnConflict } from '../prisma/prisma.service';
 import { claimClientLink, peekClientLink } from '../client-links/client-links';
 import { newSessionToken } from '../numbering/numbering';
 import { computeRedirect, finishApiRedirect, internalEndPage } from '../redirects/redirect-engine';
@@ -524,37 +524,42 @@ export class SurveyService {
       detail = SPEEDER_DETAIL;
     }
 
-    const changed = await this.prisma.$transaction(async (tx) => {
-      let revenue: number | null = null;
-      let payout: number | null = null;
-      if (status === 'COMPLETE' && !session.isTest) {
-        // Atomic quota control: only count the complete if every quota cell the respondent qualified
-        // for, the country and the vendor target still have room. Anything taken is given back otherwise.
-        const ids = session.quotaCellIds ?? [];
-        const cellIds = ids.length ? (await tx.quotaCell.findMany({ where: { id: { in: ids }, projectCountryId: session.projectCountryId }, select: { id: true } })).map((x) => x.id) : [];
-        const taken: string[] = [];
-        for (const id of cellIds) {
-          const ok = (await tx.quotaCell.updateMany({ where: { id, isOpen: true, completes: { lt: tx.quotaCell.fields.target } }, data: { completes: { increment: 1 } } })).count;
-          if (!ok) break;
-          taken.push(id);
-        }
-        const cellsOk = taken.length === cellIds.length;
-        const c = cellsOk
-          ? (await tx.projectCountry.updateMany({ where: { id: session.projectCountryId, completes: { lt: tx.projectCountry.fields.targetCompletes } }, data: { completes: { increment: 1 } } })).count
-          : 0;
-        const a = c
-          ? (await tx.vendorAllocation.updateMany({ where: { id: session.vendorAllocationId, completes: { lt: tx.vendorAllocation.fields.targetCompletes } }, data: { completes: { increment: 1 } } })).count
-          : 0;
-        if (c && !a) await tx.projectCountry.update({ where: { id: session.projectCountryId }, data: { completes: { decrement: 1 } } });
-        if (!a) for (const id of taken) await tx.quotaCell.update({ where: { id }, data: { completes: { decrement: 1 } } });
-        if (!c || !a) {
-          status = 'QUOTA_FULL';
-          detail = 'OVERQUOTA';
-        } else {
-          revenue = session.projectCountry.cpi;
-          payout = session.vendorAllocation.cpi;
-        }
+    // Atomic quota control: only count the complete if every quota cell the respondent qualified
+    // for, the country and the vendor target still have room. Anything taken is given back otherwise.
+    // Each step is a single conditional update on one document, outside the transaction below: every
+    // complete of a market writes the same market and vendor counters, and inside a MongoDB
+    // transaction those writers abort each other (load test 2026-11-25: 500s on the redirect back with
+    // 50+ respondents finishing at once). A single-document update queues instead of aborting.
+    let revenue: number | null = null;
+    let payout: number | null = null;
+    let counted: { cells: string[] } | null = null;
+    if (status === 'COMPLETE' && !session.isTest) {
+      const ids = session.quotaCellIds ?? [];
+      const cellIds = ids.length ? (await this.prisma.quotaCell.findMany({ where: { id: { in: ids }, projectCountryId: session.projectCountryId }, select: { id: true } })).map((x) => x.id) : [];
+      const taken: string[] = [];
+      for (const id of cellIds) {
+        const ok = (await retryOnConflict(() => this.prisma.quotaCell.updateMany({ where: { id, isOpen: true, completes: { lt: this.prisma.quotaCell.fields.target } }, data: { completes: { increment: 1 } } }))).count;
+        if (!ok) break;
+        taken.push(id);
       }
+      const c = taken.length === cellIds.length
+        ? (await retryOnConflict(() => this.prisma.projectCountry.updateMany({ where: { id: session.projectCountryId, completes: { lt: this.prisma.projectCountry.fields.targetCompletes } }, data: { completes: { increment: 1 } } }))).count
+        : 0;
+      const a = c
+        ? (await retryOnConflict(() => this.prisma.vendorAllocation.updateMany({ where: { id: session.vendorAllocationId, completes: { lt: this.prisma.vendorAllocation.fields.targetCompletes } }, data: { completes: { increment: 1 } } }))).count
+        : 0;
+      if (c && a) {
+        counted = { cells: taken };
+        revenue = session.projectCountry.cpi;
+        payout = session.vendorAllocation.cpi;
+      } else {
+        await this.giveBack(session, { country: !!c, allocation: false, cells: taken });
+        status = 'QUOTA_FULL';
+        detail = 'OVERQUOTA';
+      }
+    }
+
+    const changed = await this.prisma.$transaction(async (tx) => {
       // Guarded transition: only a STARTED session can take an outcome (handles concurrent callbacks).
       const updated = await tx.respondentSession.updateMany({
         where: { id: session.id, status: 'STARTED' },
@@ -578,9 +583,15 @@ export class SurveyService {
     }).catch(async (e) => {
       if (e instanceof OutcomeRace || (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002')) return false;
       throw e;
+    }).catch(async (e) => {
+      // The outcome was not saved: the counts taken for it go back before the error is reported.
+      if (counted) await this.giveBack(session, { country: true, allocation: true, cells: counted.cells });
+      throw e;
     });
 
     if (!changed) {
+      // Another callback recorded this respondent first: the counts taken here go back.
+      if (counted) await this.giveBack(session, { country: true, allocation: true, cells: counted.cells });
       const current = await this.prisma.respondentSession.findUniqueOrThrow({ where: { id: session.id }, include: SESSION_INCLUDE });
       return this.recordOutcome(current, requested, source, reason);
     }
@@ -595,6 +606,13 @@ export class SurveyService {
       await runAutoPause(this.prisma, session.projectId).catch((e) => this.log.warn(`Auto-pause check failed: ${(e as Error).message}`));
     }
     return { effectiveStatus: status as OutcomeStatus, conflict: false, changed: true };
+  }
+
+  /** Undo the quota counts taken for a complete that was not recorded. */
+  private async giveBack(session: { projectCountryId: string; vendorAllocationId: string }, what: { country: boolean; allocation: boolean; cells: string[] }) {
+    if (what.allocation) await retryOnConflict(() => this.prisma.vendorAllocation.update({ where: { id: session.vendorAllocationId }, data: { completes: { decrement: 1 } } }));
+    if (what.country) await retryOnConflict(() => this.prisma.projectCountry.update({ where: { id: session.projectCountryId }, data: { completes: { decrement: 1 } } }));
+    for (const id of what.cells) await retryOnConflict(() => this.prisma.quotaCell.update({ where: { id }, data: { completes: { decrement: 1 } } }));
   }
 
   // ───────────── Respondent gate (browser checks before the survey) ─────────────

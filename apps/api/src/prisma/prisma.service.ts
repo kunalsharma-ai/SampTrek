@@ -4,6 +4,25 @@ import { PrismaClient } from './client';
 
 /** Write conflicts between concurrent MongoDB transactions: safe to run the transaction again. */
 const isWriteConflict = (e: unknown) => e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2034';
+/**
+ * Load test 2026-11-25: with 50+ respondents finishing at once in one market, every complete
+ * increments the same market and vendor counters, and 8 quick retries were not enough (the client
+ * redirect back answered 500). Retry longer, with growing, random waits so the writers spread out.
+ */
+const MAX_ATTEMPTS = 25;
+export const backoff = (attempt: number) => Math.floor(Math.random() * Math.min(400, 5 * 2 ** Math.min(attempt, 7)));
+
+/** Runs a single write again on a write conflict (Prisma runs some single writes in a transaction too). */
+export async function retryOnConflict<T>(fn: () => Promise<T>): Promise<T> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await fn();
+    } catch (e) {
+      if (!isWriteConflict(e) || attempt >= MAX_ATTEMPTS) throw e;
+      await new Promise((r) => setTimeout(r, backoff(attempt)));
+    }
+  }
+}
 
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
@@ -18,8 +37,8 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
         try {
           return await original(arg, opts);
         } catch (e) {
-          if (!isWriteConflict(e) || attempt >= 8) throw e;
-          await new Promise((r) => setTimeout(r, Math.floor(Math.random() * 20 * attempt)));
+          if (!isWriteConflict(e) || attempt >= MAX_ATTEMPTS) throw e;
+          await new Promise((r) => setTimeout(r, backoff(attempt)));
         }
       }
     };
